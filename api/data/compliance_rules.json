@@ -1,0 +1,58 @@
+[
+  {
+    "id": "R01",
+    "category": "banned_phrase",
+    "rule_text": "Do not use the phrase 'guaranteed returns' or 'guaranteed profit'",
+    "severity": "error",
+    "enabled": true
+  },
+  {
+    "id": "R02",
+    "category": "banned_phrase",
+    "rule_text": "Do not use 'risk-free investment' or 'zero risk'",
+    "severity": "error",
+    "enabled": true
+  },
+  {
+    "id": "R03",
+    "category": "required_disclaimer",
+    "rule_text": "Investment content must include the phrase: Investments are subject to market risk",
+    "severity": "error",
+    "enabled": true
+  },
+  {
+    "id": "R04",
+    "category": "factual_claim",
+    "rule_text": "Any specific return percentage claim must cite a named source",
+    "severity": "error",
+    "enabled": true
+  },
+  {
+    "id": "R05",
+    "category": "tone",
+    "rule_text": "Do not use sensationalist language or ALL CAPS for emotional emphasis",
+    "severity": "warning",
+    "enabled": true
+  },
+  {
+    "id": "R06",
+    "category": "brand_voice",
+    "rule_text": "Tone must be authoritative but accessible — avoid unexplained financial jargon",
+    "severity": "warning",
+    "enabled": true
+  },
+  {
+    "id": "R07",
+    "category": "banned_phrase",
+    "rule_text": "Do not use 'sure profit', 'certain gains', or 'cannot lose money'",
+    "severity": "error",
+    "enabled": true
+  },
+  {
+    "id": "R08",
+    "category": "factual_claim",
+    "rule_text": "Forward-looking statements must include qualifiers: 'expected', 'projected', or 'estimated'",
+    "severity": "error",
+    "enabled": true
+  }
+]
