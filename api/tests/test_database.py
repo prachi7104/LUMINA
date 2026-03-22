@@ -16,7 +16,6 @@ from api.database import (
     write_pipeline_outputs,
 )
 
-
 pytestmark = pytest.mark.integration
 
 
@@ -165,11 +164,7 @@ def test_approve_run_updates_status(integration_enabled, test_run_id):
     assert run_rows and run_rows[0]["status"] == "completed"
 
     output_rows = (
-        client.table("pipeline_outputs")
-        .select("approved")
-        .eq("run_id", test_run_id)
-        .execute()
-        .data
+        client.table("pipeline_outputs").select("approved").eq("run_id", test_run_id).execute().data
     )
     assert output_rows
     assert all(row["approved"] is True for row in output_rows)

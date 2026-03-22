@@ -43,7 +43,7 @@ def test_stub_pipeline_runs_end_to_end():
         "escalation_required": False,
         "error_message": None,
         "pipeline_status": "",
-        "audit_log": []
+        "audit_log": [],
     }
 
     # Configure with thread_id for checkpointing

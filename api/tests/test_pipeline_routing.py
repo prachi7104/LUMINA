@@ -4,9 +4,8 @@ Unit tests for pipeline routing logic.
 
 import pytest
 
-from api.graph.routing import route_after_compliance
 from api.graph.pipeline import build_pipeline
-from api.graph.state import ContentState
+from api.graph.routing import route_after_compliance
 
 
 @pytest.fixture
@@ -32,7 +31,7 @@ def base_state():
         "escalation_required": False,
         "error_message": None,
         "pipeline_status": "",
-        "audit_log": []
+        "audit_log": [],
     }
 
 

@@ -46,11 +46,7 @@ def test_uses_heavy_key_for_70b_model(mocker, mock_settings, mock_openai_respons
     mock_client.chat.completions.create.return_value = mock_openai_response
     mock_openai.return_value = mock_client
 
-    call_llm(
-        model="llama-3.3-70b-versatile",
-        system="Test system",
-        user="Test user"
-    )
+    call_llm(model="llama-3.3-70b-versatile", system="Test system", user="Test user")
 
     # First call to OpenAI should be for Groq with heavy key
     assert mock_openai.call_args_list[0][1]["api_key"] == "test-heavy-key"
@@ -64,11 +60,7 @@ def test_uses_light_key_for_8b_model(mocker, mock_settings, mock_openai_response
     mock_client.chat.completions.create.return_value = mock_openai_response
     mock_openai.return_value = mock_client
 
-    call_llm(
-        model="llama-3.1-8b-instant",
-        system="Test system",
-        user="Test user"
-    )
+    call_llm(model="llama-3.1-8b-instant", system="Test system", user="Test user")
 
     # First call to OpenAI should be for Groq with light key
     assert mock_openai.call_args_list[0][1]["api_key"] == "test-light-key"
@@ -86,25 +78,16 @@ def test_retries_on_rate_limit_then_succeeds(
     mock_client = MagicMock()
 
     # First call raises RateLimitError, second succeeds
-    mock_client.chat.completions.create.side_effect = [
-        mock_rate_limit_error,
-        mock_openai_response
-    ]
+    mock_client.chat.completions.create.side_effect = [mock_rate_limit_error, mock_openai_response]
     mock_openai.return_value = mock_client
 
-    result = call_llm(
-        model="llama-3.1-8b-instant",
-        system="Test system",
-        user="Test user"
-    )
+    result = call_llm(model="llama-3.1-8b-instant", system="Test system", user="Test user")
 
     assert result == "Test response"
     assert mock_client.chat.completions.create.call_count == 2
 
 
-def test_falls_back_to_google_after_3_groq_failures(
-    mocker, mock_settings, mock_rate_limit_error
-):
+def test_falls_back_to_google_after_3_groq_failures(mocker, mock_settings, mock_rate_limit_error):
     """Test fallback to Google AI Studio after 3 Groq rate limit failures."""
     # Mock time.sleep to avoid delays
     mocker.patch("api.llm.time.sleep")
@@ -127,11 +110,7 @@ def test_falls_back_to_google_after_3_groq_failures(
     # Return Groq client first (3 times), then Google client
     mock_openai.side_effect = [mock_groq_client, mock_google_client]
 
-    result = call_llm(
-        model="llama-3.1-8b-instant",
-        system="Test system",
-        user="Test user"
-    )
+    result = call_llm(model="llama-3.1-8b-instant", system="Test system", user="Test user")
 
     # Should return Google's response
     assert result == "Google fallback response"
@@ -168,11 +147,7 @@ def test_raises_runtime_error_if_all_fail(mocker, mock_settings, mock_rate_limit
     mock_openai.side_effect = [mock_groq_client, mock_google_client]
 
     with pytest.raises(RuntimeError) as exc_info:
-        call_llm(
-            model="llama-3.1-8b-instant",
-            system="Test system",
-            user="Test user"
-        )
+        call_llm(model="llama-3.1-8b-instant", system="Test system", user="Test user")
 
     assert "Both Groq and Google AI Studio failed" in str(exc_info.value)
     assert "Google API error" in str(exc_info.value)
@@ -185,12 +160,7 @@ def test_json_mode_adds_response_format(mocker, mock_settings, mock_openai_respo
     mock_client.chat.completions.create.return_value = mock_openai_response
     mock_openai.return_value = mock_client
 
-    call_llm(
-        model="llama-3.1-8b-instant",
-        system="Test system",
-        user="Test user",
-        json_mode=True
-    )
+    call_llm(model="llama-3.1-8b-instant", system="Test system", user="Test user", json_mode=True)
 
     # Check the create call included response_format
     create_call_kwargs = mock_client.chat.completions.create.call_args[1]

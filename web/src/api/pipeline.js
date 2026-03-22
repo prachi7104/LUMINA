@@ -87,6 +87,18 @@ export async function submitFeedback(runId, rating, comment, channel) {
   return handleJsonResponse(response);
 }
 
+export async function patchOutput(runId, channel, language, content) {
+  const response = await fetch(`${API_BASE}/api/pipeline/${runId}/output`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ channel, language, content }),
+  });
+
+  return handleJsonResponse(response);
+}
+
 export async function getAudit(runId) {
   const response = await fetch(`${API_BASE}/api/pipeline/${runId}/audit`);
   const data = await handleJsonResponse(response);

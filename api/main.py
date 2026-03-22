@@ -49,6 +49,12 @@ class FeedbackRequest(BaseModel):
     channel: str = "blog"
 
 
+class PatchOutputRequest(BaseModel):
+    channel: str
+    language: str
+    content: str
+
+
 @app.on_event("startup")
 async def on_startup() -> None:
     global APP_EVENT_LOOP
@@ -85,6 +91,7 @@ def _run_pipeline_thread(run_id: str, brief: dict, engagement_data: dict | None)
             "brief": brief,
             "engagement_data": engagement_data,
             "strategy": {},
+            "trend_context": "",
             "past_feedback": database.get_past_feedback(brief.get("topic", "")),
             "draft": "",
             "draft_version": 0,
@@ -239,6 +246,36 @@ async def save_pipeline_feedback(run_id: str, request: FeedbackRequest) -> dict:
         channel=request.channel,
     )
     return {"status": "saved"}
+
+
+@app.patch("/api/pipeline/{run_id}/output")
+async def patch_pipeline_output(run_id: str, request: PatchOutputRequest) -> dict:
+    database.patch_output(
+        run_id=run_id,
+        channel=request.channel,
+        language=request.language,
+        content=request.content,
+    )
+
+    try:
+        client = database.get_supabase_client()
+        if client is not None:
+            client.table("agent_events").insert(
+                {
+                    "run_id": run_id,
+                    "agent_name": "user_edit",
+                    "action": "manual_edit",
+                    "output_summary": f"User manually edited {request.channel}/{request.language} output",
+                }
+            ).execute()
+    except Exception as exc:
+        logger.exception("Failed to write user_edit audit event for run_id=%s: %s", run_id, exc)
+
+    return {
+        "status": "updated",
+        "channel": request.channel,
+        "language": request.language,
+    }
 
 
 @app.get("/api/pipeline/{run_id}/audit")

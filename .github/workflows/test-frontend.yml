@@ -1,0 +1,36 @@
+name: Test Frontend
+
+on:
+  push:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test-frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Run ESLint
+        working-directory: web
+        run: npm run lint
+
+      - name: Run Vitest
+        working-directory: web
+        run: npm test
+
+      - name: Run build check
+        working-directory: web
+        run: npm run build

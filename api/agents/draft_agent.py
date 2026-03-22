@@ -8,6 +8,33 @@ import time
 from api.graph.state import ContentState
 from api.llm import call_llm
 
+MANDATORY_DISCLAIMER = (
+    "Investments are subject to market risk. "
+    "Please read all scheme-related documents carefully before investing."
+)
+
+
+def inject_mandatory_disclaimer(draft: str) -> str:
+    """Ensure mandatory investment disclaimer is present in the draft."""
+    draft_text = draft or ""
+
+    # Case-insensitive presence check across whole draft.
+    if "investments are subject to market risk" in draft_text.lower():
+        return draft_text
+
+    marker = "##CONCLUSION"
+    if marker in draft_text:
+        before, after = draft_text.split(marker, 1)
+        after_clean = after.lstrip("\n")
+        if after_clean:
+            return f"{before}{marker}\n{MANDATORY_DISCLAIMER}\n\n{after_clean}"
+        return f"{before}{marker}\n{MANDATORY_DISCLAIMER}"
+
+    trimmed = draft_text.rstrip()
+    if trimmed:
+        return f"{trimmed}\n\n{MANDATORY_DISCLAIMER}"
+    return MANDATORY_DISCLAIMER
+
 
 def run_draft_agent(state: ContentState) -> dict:
     """
@@ -78,6 +105,12 @@ Return ONLY the article text with section markers. No explanation."""
 
         user_prompt = f"Content Brief:\n{json.dumps(brief, indent=2)}\n\n"
 
+        if state.get("trend_context"):
+            user_prompt += (
+                "CURRENT TRENDS AND CONTEXT (incorporate these naturally):\n"
+                f"{state['trend_context']}\n\n"
+            )
+
         if past_feedback:
             user_prompt += "Learn from past feedback on similar content:\n"
             for i, feedback in enumerate(past_feedback[:3], 1):  # Limit to top 3
@@ -98,6 +131,8 @@ Return ONLY the article text with section markers. No explanation."""
         max_tokens=3000,
         json_mode=False
     )
+
+    draft_content = inject_mandatory_disclaimer(draft_content)
 
     end_time = time.time()
     duration_ms = int((end_time - start_time) * 1000)
