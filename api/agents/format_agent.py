@@ -104,7 +104,11 @@ Twitter rules:
     full_audit_log = state.get("audit_log", []) + [audit_entry]
 
     try:
-        write_pipeline_outputs(run_id=run_id, outputs=output_payload)
+        write_pipeline_outputs(
+            run_id=run_id,
+            outputs=output_payload,
+            localized_hi=state.get("localized_hi", ""),
+        )
     except Exception as exc:
         logger.exception("Failed to write pipeline outputs to Supabase: %s", exc)
 
