@@ -3,7 +3,6 @@ from pathlib import Path
 from dotenv import load_dotenv
 from pydantic.v1 import BaseSettings, Field, ValidationError, validator
 
-
 ROOT_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=ROOT_DIR / ".env", override=False)
 

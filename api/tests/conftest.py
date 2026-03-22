@@ -1,34 +1,59 @@
+import os
+
 import pytest
 
 from api.graph.state import ContentState
 
+REQUIRED_INTEGRATION_ENV_VARS = [
+    "GROQ_API_KEY_HEAVY",
+    "GROQ_API_KEY_LIGHT",
+    "SUPABASE_URL",
+    "SUPABASE_ANON_KEY",
+    "GOOGLE_API_KEY",
+]
+
+
+def pytest_collection_modifyitems(items):
+    """Ensure integration tests always run env var checks first."""
+    for item in items:
+        if item.get_closest_marker("integration"):
+            item.add_marker(pytest.mark.usefixtures("check_env_vars"))
+
+
+@pytest.fixture(scope="session")
+def check_env_vars():
+    """Skip integration tests when required API credentials are not configured."""
+    for env_var in REQUIRED_INTEGRATION_ENV_VARS:
+        if not os.getenv(env_var):
+            pytest.skip(f"Missing required env var for integration tests: set {env_var}")
+
 
 @pytest.fixture
 def minimal_content_state():
-	"""Build a minimal ContentState payload for agent tests."""
+    """Build a minimal ContentState payload for agent tests."""
 
-	def _build(draft: str) -> ContentState:
-		return {
-			"run_id": "test-run-123",
-			"brief": {},
-			"engagement_data": None,
-			"strategy": {},
-			"past_feedback": [],
-			"draft": draft,
-			"draft_version": 1,
-			"compliance_verdict": "",
-			"compliance_feedback": [],
-			"compliance_iterations": 0,
-			"localized_hi": "",
-			"blog_html": "",
-			"twitter_thread": [],
-			"linkedin_post": "",
-			"whatsapp_message": "",
-			"human_approved": False,
-			"escalation_required": False,
-			"error_message": None,
-			"pipeline_status": "pending",
-			"audit_log": [],
-		}
+    def _build(draft: str) -> ContentState:
+        return {
+            "run_id": "test-run-123",
+            "brief": {},
+            "engagement_data": None,
+            "strategy": {},
+            "past_feedback": [],
+            "draft": draft,
+            "draft_version": 1,
+            "compliance_verdict": "",
+            "compliance_feedback": [],
+            "compliance_iterations": 0,
+            "localized_hi": "",
+            "blog_html": "",
+            "twitter_thread": [],
+            "linkedin_post": "",
+            "whatsapp_message": "",
+            "human_approved": False,
+            "escalation_required": False,
+            "error_message": None,
+            "pipeline_status": "pending",
+            "audit_log": [],
+        }
 
-	return _build
+    return _build

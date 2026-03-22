@@ -13,6 +13,7 @@ class ContentState(TypedDict):
 
     Phase Outputs:
       - strategy: Output from intake agent (content strategy)
+      - trend_context: Trend summary bullets generated from current market context
       - draft: Article with ##INTRO ##BODY ##CONCLUSION markers
       - draft_version: Iteration counter for compliance loops (max 3)
       - compliance_verdict: Empty string until compliance check runs
@@ -37,6 +38,7 @@ class ContentState(TypedDict):
     brief: dict
     engagement_data: dict | None
     strategy: dict
+    trend_context: str
     past_feedback: list[str]
     draft: str
     draft_version: int

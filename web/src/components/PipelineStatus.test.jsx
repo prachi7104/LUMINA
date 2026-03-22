@@ -4,16 +4,21 @@ import { describe, expect, it } from "vitest";
 import PipelineStatus from "./PipelineStatus";
 
 describe("PipelineStatus", () => {
-  it("renders_all_5_agents_in_order", () => {
+  it("renders_all_6_agents_in_order", () => {
     render(<PipelineStatus agentStatuses={{}} />);
 
     const rows = screen.getAllByTestId(/agent-row-/);
-    expect(rows).toHaveLength(5);
+    expect(rows).toHaveLength(6);
 
     const intakeText = screen.getByText("Intake & strategy");
+    const trendText = screen.getByText("Trend analysis");
     const draftText = screen.getByText("Content draft");
     expect(
-      intakeText.compareDocumentPosition(draftText) &
+      intakeText.compareDocumentPosition(trendText) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      trendText.compareDocumentPosition(draftText) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
@@ -22,7 +27,7 @@ describe("PipelineStatus", () => {
     render(<PipelineStatus agentStatuses={{}} />);
 
     const statuses = screen.getAllByText("pending");
-    expect(statuses).toHaveLength(5);
+    expect(statuses).toHaveLength(6);
   });
 
   it("shows_green_for_complete_status", () => {

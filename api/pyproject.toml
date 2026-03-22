@@ -23,5 +23,9 @@ ignore = [
 [tool.ruff.lint.isort]
 known-first-party = ["api"]
 
+[tool.ruff.format]
+indent-style = "space"
+quote-style = "double"
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

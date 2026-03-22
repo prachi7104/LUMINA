@@ -1,5 +1,6 @@
 const AGENTS = [
   { id: "intake_agent", name: "Intake & strategy" },
+  { id: "trend_agent", label: "Trend analysis" },
   { id: "draft_agent", name: "Content draft" },
   { id: "compliance_agent", name: "Compliance review" },
   { id: "localization_agent", name: "Hindi localization" },
@@ -67,7 +68,7 @@ export default function PipelineStatus({ agentStatuses }) {
                 className={getDotClass(event)}
                 style={{ width: "2px", height: "2px", borderRadius: "9999px" }}
               />
-              <span>{agent.name}</span>
+              <span>{agent.label || agent.name}</span>
             </div>
             <span data-testid={`agent-status-${agent.id}`}>
               {getStatusLabel(event)}

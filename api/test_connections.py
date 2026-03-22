@@ -7,7 +7,6 @@ and prints PASS/FAIL for each without raising exceptions.
 """
 
 import sys
-from typing import Optional
 
 
 def test_groq_heavy(api_key: str) -> tuple[bool, str]:

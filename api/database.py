@@ -152,6 +152,32 @@ def get_outputs(run_id: str) -> list[dict]:
         return []
 
 
+def patch_output(run_id: str, channel: str, language: str, content: str) -> None:
+    """Update one pipeline output content by run/channel/language."""
+    client = get_supabase_client()
+    if client is None:
+        return None
+
+    try:
+        (
+            client.table("pipeline_outputs")
+            .update({"content": content})
+            .eq("run_id", run_id)
+            .eq("channel", channel)
+            .eq("language", language)
+            .execute()
+        )
+    except Exception as exc:
+        logger.exception(
+            "Failed to patch output for run_id=%s channel=%s language=%s: %s",
+            run_id,
+            channel,
+            language,
+            exc,
+        )
+    return None
+
+
 def get_audit(run_id: str) -> list[dict]:
     """Get audit events for a run ordered by creation time."""
     client = get_supabase_client()
