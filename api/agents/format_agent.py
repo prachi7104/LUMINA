@@ -7,7 +7,13 @@ import logging
 import time
 from typing import Any
 
-from api.database import update_run_status, write_audit_log, write_pipeline_outputs
+from api.database import (
+    get_recent_corrections,
+    save_pipeline_metrics,
+    update_run_status,
+    write_audit_log,
+    write_pipeline_outputs,
+)
 from api.graph.state import ContentState
 from api.llm import call_llm
 
@@ -116,6 +122,38 @@ Twitter rules:
         write_audit_log(run_id=run_id, audit_log=full_audit_log)
     except Exception as exc:
         logger.exception("Failed to write audit log to Supabase: %s", exc)
+
+    try:
+        total_duration_ms = sum(
+            int(entry.get("duration_ms") or 0) for entry in state.get("audit_log", [])
+        )
+        agent_count = len([entry for entry in state.get("audit_log", []) if entry.get("agent")])
+
+        recent = get_recent_corrections(state.get("content_category", "general"), limit=10)
+        corrections_applied = len(recent)
+
+        MANUAL_HOURS_PER_PIECE = 7.5
+        COST_PER_HOUR_INR = 1500
+
+        trend_sources = state.get("trend_sources", [])
+        trend_sources_used = len(trend_sources) if isinstance(trend_sources, list) else 0
+
+        metrics_dict = {
+            "total_duration_ms": total_duration_ms,
+            "agent_count": agent_count,
+            "compliance_iterations": state.get("compliance_iterations", 0),
+            "corrections_applied": corrections_applied,
+            "rules_checked": state.get("org_rules_count", 8),
+            "trend_sources_used": trend_sources_used,
+            "estimated_hours_saved": MANUAL_HOURS_PER_PIECE,
+            "estimated_cost_saved_inr": MANUAL_HOURS_PER_PIECE * COST_PER_HOUR_INR,
+        }
+        save_pipeline_metrics(state["run_id"], metrics_dict)
+
+        audit_entry["metrics_saved"] = True
+        audit_entry["estimated_hours_saved"] = MANUAL_HOURS_PER_PIECE
+    except Exception as exc:
+        logger.exception("Failed to calculate/save pipeline metrics for run_id=%s: %s", run_id, exc)
 
     try:
         update_run_status(run_id=run_id, status="awaiting_approval")
