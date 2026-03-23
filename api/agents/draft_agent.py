@@ -3,10 +3,14 @@ Draft agent: Generates article content with section markers.
 """
 
 import json
+import logging
 import time
 
+from api.database import get_recent_corrections
 from api.graph.state import ContentState
 from api.llm import call_llm
+
+logger = logging.getLogger(__name__)
 
 MANDATORY_DISCLAIMER = (
     "Investments are subject to market risk. "
@@ -48,6 +52,28 @@ def run_draft_agent(state: ContentState) -> dict:
     compliance_feedback = state.get("compliance_feedback", [])
     current_draft = state.get("draft", "")
     past_feedback = state.get("past_feedback", [])
+    content_category = state.get("content_category", "general")
+
+    recent_corrections: list[dict] = []
+    try:
+        recent_corrections = get_recent_corrections(content_category, limit=3)
+    except Exception as exc:
+        logger.warning(
+            "Failed to load recent corrections for content_category=%s: %s",
+            content_category,
+            exc,
+        )
+        recent_corrections = []
+
+    if len(recent_corrections) > 0:
+        lines = ["EDITORIAL CORRECTIONS FROM PREVIOUS SIMILAR CONTENT:"]
+        lines.append("Your editors have previously improved AI drafts like this:")
+        for correction in recent_corrections:
+            lines.append(f"• Previous change: {correction['diff_summary']}")
+        lines.append("Apply these patterns to improve this draft.")
+        correction_context = "\n".join(lines)
+    else:
+        correction_context = ""
 
     # Determine if this is a revision or fresh draft
     is_revision = len(compliance_feedback) > 0
@@ -78,6 +104,9 @@ Return ONLY the complete revised draft. No explanation."""
 
         user_prompt += "Do not change any other sentence. Return the complete revised draft with ##INTRO, ##BODY, ##CONCLUSION markers."
 
+        if correction_context:
+            user_prompt = correction_context + "\n\n" + user_prompt
+
         action = "revised"
     else:
         # FRESH DRAFT MODE
@@ -104,6 +133,9 @@ Guidelines:
 Return ONLY the article text with section markers. No explanation."""
 
         user_prompt = f"Content Brief:\n{json.dumps(brief, indent=2)}\n\n"
+
+        if correction_context:
+            user_prompt = correction_context + "\n\n" + user_prompt
 
         if state.get("trend_context"):
             user_prompt += (
@@ -167,12 +199,15 @@ Return ONLY the article text with section markers. No explanation."""
         "action": action,
         "model": model,
         "duration_ms": duration_ms,
+        "corrections_applied": len(recent_corrections),
+        "content_category": content_category,
         "output_summary": f"version={new_version}, word_count~{len(draft_content.split())}, is_revision={is_revision}"
     }
 
     return {
         "draft": draft_content,
         "draft_version": new_version,
+        "corrections_applied": len(recent_corrections),
         "compliance_feedback": [],  # Clear after processing
         "pipeline_status": "draft_complete",
         "audit_log": state.get("audit_log", []) + [audit_entry]
