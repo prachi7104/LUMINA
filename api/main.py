@@ -132,6 +132,26 @@ def _format_inr_indian(value: float) -> str:
     return f"{sign}\u20b9{','.join(groups)},{last3}"
 
 
+def _extract_pipeline_status(payload: object) -> str | None:
+    if isinstance(payload, dict):
+        direct = payload.get("pipeline_status")
+        if isinstance(direct, str) and direct.strip():
+            return direct
+
+        for value in payload.values():
+            nested = _extract_pipeline_status(value)
+            if nested:
+                return nested
+
+    if isinstance(payload, list):
+        for value in payload:
+            nested = _extract_pipeline_status(value)
+            if nested:
+                return nested
+
+    return None
+
+
 def _run_pipeline_thread(run_id: str, brief: dict, engagement_data: dict | None) -> None:
     try:
         # Lazy import to avoid circular dependencies at module import time.
@@ -199,7 +219,13 @@ def _run_pipeline_thread(run_id: str, brief: dict, engagement_data: dict | None)
             "audit_log": [],
         }
 
+        latest_pipeline_status = "running"
+
         for update in pipeline.stream(initial_state, config, stream_mode="updates"):
+            status = _extract_pipeline_status(update)
+            if status:
+                latest_pipeline_status = status
+
             _emit_sse(
                 run_id,
                 {
@@ -209,13 +235,31 @@ def _run_pipeline_thread(run_id: str, brief: dict, engagement_data: dict | None)
                 },
             )
 
-        _emit_sse(
-            run_id,
-            {
-                "type": "human_required",
-                "run_id": run_id,
-            },
-        )
+        if latest_pipeline_status == "awaiting_approval":
+            _emit_sse(
+                run_id,
+                {
+                    "type": "human_required",
+                    "run_id": run_id,
+                },
+            )
+        elif latest_pipeline_status == "escalated":
+            _emit_sse(
+                run_id,
+                {
+                    "type": "error",
+                    "run_id": run_id,
+                    "message": "Pipeline escalated for manual review before formatting outputs.",
+                },
+            )
+        else:
+            _emit_sse(
+                run_id,
+                {
+                    "type": "pipeline_complete",
+                    "run_id": run_id,
+                },
+            )
     except Exception as exc:
         logger.exception("Pipeline execution failed for run_id=%s: %s", run_id, exc)
         database.update_run_status(run_id, "failed")

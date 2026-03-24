@@ -142,39 +142,63 @@ export function ApprovalGate() {
   const [metrics, setMetrics] = useState<PipelineMetrics | null>(null);
   const [complianceSummary, setComplianceSummary] = useState<ComplianceAuditSummary | null>(null);
   const [outputOptions, setOutputOptions] = useState<OutputOption[]>(['blog', 'twitter', 'linkedin', 'whatsapp']);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [toast, setToast] = useState('');
   const [unsavedTabs, setUnsavedTabs] = useState<Set<Channel>>(new Set());
 
-  useEffect(() => {
-    if (!id) return;
-    Promise.all([getOutputs(id), getMetrics(id), getAuditTrail(id)])
-      .then(([outputs, loadedMetrics, auditEvents]) => {
-        const mapped = mapOutputsToContent(outputs);
-        setContent(mapped);
-        setEditedContent(mapped);
-        setOriginalContent(mapped);
-        setMetrics(loadedMetrics);
-        setComplianceSummary(parseComplianceSummary(auditEvents));
-        const formatMeta = parseFormatMetadata(auditEvents);
-        setOutputOptions(formatMeta.options);
+  const hasAnyGeneratedOutput = [
+    content.blog,
+    content.op_ed,
+    content.explainer_box,
+    content.twitter,
+    content.linkedin,
+    content.whatsapp,
+    content.hindi,
+  ].some((value) => (value || '').trim().length > 0);
 
-        if (formatMeta.options.includes('et_op_ed')) {
-          setActiveTab('op_ed');
-        } else if (formatMeta.options.includes('et_explainer_box')) {
-          setActiveTab('explainer_box');
-        } else if (formatMeta.options.includes('blog')) {
-          setActiveTab('blog');
-        } else if (formatMeta.options.includes('twitter')) {
-          setActiveTab('twitter');
-        } else if (formatMeta.options.includes('linkedin')) {
-          setActiveTab('linkedin');
-        } else if (formatMeta.options.includes('whatsapp')) {
-          setActiveTab('whatsapp');
-        } else {
-          setActiveTab('hindi');
-        }
-      })
-      .catch((err) => console.error('Failed to load outputs:', err));
+  const loadRunData = async (withSpinner = false) => {
+    if (!id) return;
+    if (withSpinner) {
+      setIsRefreshing(true);
+    }
+
+    try {
+      const [outputs, loadedMetrics, auditEvents] = await Promise.all([getOutputs(id), getMetrics(id), getAuditTrail(id)]);
+      const mapped = mapOutputsToContent(outputs);
+      setContent(mapped);
+      setEditedContent(mapped);
+      setOriginalContent(mapped);
+      setMetrics(loadedMetrics);
+      setComplianceSummary(parseComplianceSummary(auditEvents));
+      const formatMeta = parseFormatMetadata(auditEvents);
+      setOutputOptions(formatMeta.options);
+
+      if (formatMeta.options.includes('et_op_ed')) {
+        setActiveTab('op_ed');
+      } else if (formatMeta.options.includes('et_explainer_box')) {
+        setActiveTab('explainer_box');
+      } else if (formatMeta.options.includes('blog')) {
+        setActiveTab('blog');
+      } else if (formatMeta.options.includes('twitter')) {
+        setActiveTab('twitter');
+      } else if (formatMeta.options.includes('linkedin')) {
+        setActiveTab('linkedin');
+      } else if (formatMeta.options.includes('whatsapp')) {
+        setActiveTab('whatsapp');
+      } else {
+        setActiveTab('hindi');
+      }
+    } catch (err) {
+      console.error('Failed to load outputs:', err);
+    } finally {
+      if (withSpinner) {
+        setIsRefreshing(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    void loadRunData();
   }, [id]);
 
   const complianceAnnotations = (complianceSummary?.annotations || []) as ComplianceAnnotation[];
@@ -513,6 +537,21 @@ export function ApprovalGate() {
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-8 flex flex-col lg:flex-row gap-8">
         {/* Content Area */}
         <div className="flex-1">
+          {!hasAnyGeneratedOutput && (
+            <div className="mb-4 rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning">
+              <p className="font-medium">No generated outputs found for this run yet.</p>
+              <p className="mt-1 text-xs text-text-secondary">
+                This can happen for older runs or when a run escalates before formatting. Try refreshing outputs.
+              </p>
+              <button
+                onClick={() => void loadRunData(true)}
+                className="mt-3 rounded border border-warning/40 px-3 py-1.5 text-xs text-warning hover:bg-warning/20 transition-colors"
+              >
+                {isRefreshing ? 'Refreshing...' : 'Refresh outputs'}
+              </button>
+            </div>
+          )}
+
           {renderContent()}
           {toast && (
             <div className="mt-4 rounded-md border border-green-500/40 bg-green-500/10 px-4 py-3 text-sm text-green-500">
