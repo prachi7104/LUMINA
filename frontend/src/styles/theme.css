@@ -1,7 +1,7 @@
 :root {
   /* Light Theme — "Studio" */
-  --bg-primary: #FFFFFF;
-  --bg-surface: #F4F5F7;
+  --bg-primary: #F9FAFB;
+  --bg-surface: #FFFFFF;
   --bg-elevated: #ECEEF1;
   --bg-overlay: rgba(255, 255, 255, 0.9);
 
@@ -157,18 +157,18 @@
 
 /* Studio card — shadow replaces border */
 .card {
-  background: var(--bg-primary);
+  background: var(--bg-surface);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-md);
-  border: none;
+  border: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 /* Surface card variant */
 .card-surface {
-  background: var(--bg-surface);
+  background: var(--bg-elevated);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-sm);
-  border: none;
+  border: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 /* Glassmorphism utility — light mode */

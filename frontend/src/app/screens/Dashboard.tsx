@@ -133,17 +133,17 @@ function formatDate(createdAt: string): string {
 function statusBadge(status: string) {
   switch (status) {
     case 'completed':
-      return { label: 'Completed', cls: 'bg-[#10B981] text-white' };
+      return { label: 'Completed', cls: 'bg-success text-white px-3 py-1' };
     case 'running':
-      return { label: 'Running', cls: 'badge-processing' };
+      return { label: 'Running', cls: 'bg-accent-primary text-white px-3 py-1 badge-processing' };
     case 'awaiting_approval':
-      return { label: 'Awaiting Approval', cls: 'bg-[#F59E0B] text-white' };
+      return { label: 'Awaiting Review', cls: 'bg-warning text-white px-3 py-1' };
     case 'failed':
-      return { label: 'Failed', cls: 'bg-[#EF4444] text-white' };
+      return { label: 'Failed', cls: 'bg-error text-white px-3 py-1' };
     case 'escalated':
-      return { label: 'Escalated', cls: 'bg-[#F97316] text-white' };
+      return { label: 'Escalated', cls: 'bg-orange-500 text-white px-3 py-1' };
     default:
-      return { label: status, cls: 'bg-text-tertiary/20 text-text-secondary' };
+      return { label: status, cls: 'bg-text-tertiary/20 text-text-secondary px-3 py-1' };
   }
 }
 
@@ -261,25 +261,25 @@ export function Dashboard() {
       transition={{ duration: 0.22, ease: 'easeOut' }}
       className="min-h-screen bg-bg-primary"
     >
-      <main className="max-w-[1440px] mx-auto px-4 md:px-6 py-8 md:py-12">
+      <main className="max-w-[1600px] mx-auto px-8 py-8 md:py-12">
         {/* ------ Section: Template Grid ------ */}
-        <section className="mb-12">
+        <section className="mb-8">
           <h2 className="text-text-secondary text-sm font-medium mb-6">
             What would you like to create?
           </h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-6">
             {TEMPLATE_TILES.map((tile) => {
               const Icon = tile.icon;
               return (
                 <button
                   key={tile.id}
                   onClick={() => openDrawer(tile)}
-                  className="card text-left p-6 pt-0 overflow-hidden transition-transform hover:scale-[1.02] hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+                  className="card text-left p-4 pt-0 overflow-hidden transition-transform hover:scale-[1.02] hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
                 >
                   {/* colored top border strip */}
                   <div
-                    className="h-1 -mx-6 mb-5"
+                    className="h-1 -mx-4 mb-3"
                     style={{ background: tile.borderGradient }}
                   />
                   <div className="flex items-center gap-3">
@@ -294,131 +294,132 @@ export function Dashboard() {
           </div>
         </section>
 
-        {/* ------ Section: Achievement Cards ------ */}
-        {summary && (
-          <section className="mb-12">
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="card-surface p-5">
-                <Clock className="w-5 h-5 text-success mb-2" />
-                <p className="text-xs text-text-secondary mb-1">Hours Saved</p>
-                <p className="text-text-primary text-xl font-semibold">
-                  {summary.total_time_saved_hours.toFixed(1)}h
-                </p>
-              </div>
-
-              <div className="card-surface p-5">
-                <IndianRupee className="w-5 h-5 text-accent-primary mb-2" />
-                <p className="text-xs text-text-secondary mb-1">Cost Equivalent</p>
-                <p className="text-text-primary text-xl font-semibold">
-                  {summary.total_cost_saved_inr.toLocaleString('en-IN')}
-                </p>
-              </div>
-
-              <div className="card-surface p-5">
-                <CheckCircle className="w-5 h-5 text-accent-primary mb-2" />
-                <p className="text-xs text-text-secondary mb-1">Runs Completed</p>
-                <p className="text-text-primary text-xl font-semibold">
-                  {summary.total_runs}
-                </p>
-              </div>
-
-              <div className="card-surface p-5">
-                <Edit3 className="w-5 h-5 text-warning mb-2" />
-                <p className="text-xs text-text-secondary mb-1">Corrections Captured</p>
-                <p className="text-text-primary text-xl font-semibold">
-                  {summary.total_corrections_captured}
-                </p>
-              </div>
+        {/* ------ Activity Area: Recent Pipelines (70%) + Achievement Cards & Brand Hub (30%) ------ */}
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_0.45fr] gap-6">
+          {/* LEFT COLUMN 70%: Recent Pipelines */}
+          <section>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-text-secondary text-sm font-medium">Recent Pipelines</h2>
+              <button
+                onClick={() => navigate('/pipelines')}
+                className="flex items-center gap-1 text-accent-primary text-sm hover:gap-2 transition-all"
+              >
+                View all <ArrowRight className="w-4 h-4" />
+              </button>
             </div>
-          </section>
-        )}
 
-        {/* ------ Section: Recent Pipelines ------ */}
-        <section className="mb-12">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-text-secondary text-sm font-medium">Recent Pipelines</h2>
-            <button
-              onClick={() => navigate('/pipelines')}
-              className="flex items-center gap-1 text-accent-primary text-sm hover:gap-2 transition-all"
-            >
-              View all <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-
-          {summary?.most_recent_runs && summary.most_recent_runs.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {summary.most_recent_runs.map((run) => {
-                const badge = statusBadge(run.status);
-                return (
-                  <button
-                    key={run.id}
-                    onClick={() => handlePipelineClick(run)}
-                    className="card text-left p-5 transition-transform hover:scale-[1.01] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-                  >
-                    <p className="text-text-primary mb-3 line-clamp-2 font-medium leading-relaxed">
-                      {run.brief_topic}
-                    </p>
-                    <div className="flex items-center justify-between">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-medium ${badge.cls}`}
-                      >
-                        {badge.label}
-                      </span>
-                      <span className="text-xs text-text-tertiary">
-                        {formatDate(run.created_at)}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="card p-8 text-center text-sm text-text-secondary">
-              No pipelines yet. Pick a template above to get started.
-            </div>
-          )}
-        </section>
-
-        {/* ------ Section: Brand Hub ------ */}
-        <section className="mb-12">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-text-secondary text-sm font-medium">Brand Hub</h2>
-            <span className="text-xs text-text-tertiary">
-              {styleMemory?.total ?? 0} corrections captured
-            </span>
-          </div>
-
-          {!styleMemory || styleMemory.categories.length === 0 ? (
-            <div className="card p-8 text-sm text-text-secondary text-center">
-              No editorial corrections captured yet. Corrections from approvals will appear here.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {styleMemory.categories.map((category) => {
-                const entries = styleMemory.by_category[category] || [];
-                return (
-                  <div key={category} className="card-surface p-5">
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-sm font-semibold text-text-primary capitalize">
-                        {category}
+            {summary?.most_recent_runs && summary.most_recent_runs.length > 0 ? (
+              <div className="grid grid-cols-1 gap-4">
+                {summary.most_recent_runs.map((run) => {
+                  const badge = statusBadge(run.status);
+                  return (
+                    <button
+                      key={run.id}
+                      onClick={() => handlePipelineClick(run)}
+                      className="card text-left p-5 transition-transform hover:scale-[1.01] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+                    >
+                      <p className="text-text-primary mb-3 line-clamp-2 font-medium leading-relaxed">
+                        {run.brief_topic}
                       </p>
-                      <span className="px-2 py-0.5 rounded-full bg-accent-primary/15 text-accent-primary text-xs font-medium">
-                        Confidence: {entries.length}
-                      </span>
-                    </div>
-                    <ul className="space-y-1 text-xs text-text-secondary">
-                      {entries.slice(0, 4).map((entry, idx) => (
-                        <li key={`${category}-${idx}`} className="line-clamp-1">
-                          {entry}
-                        </li>
-                      ))}
-                    </ul>
+                      <div className="flex items-center justify-between">
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-medium ${badge.cls}`}
+                        >
+                          {badge.label}
+                        </span>
+                        <span className="text-xs text-text-tertiary">
+                          {formatDate(run.created_at)}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="card p-8 text-center text-sm text-text-secondary">
+                No pipelines yet. Pick a template above to get started.
+              </div>
+            )}
+          </section>
+
+          {/* RIGHT COLUMN 30%: Achievement Cards + Brand Hub */}
+          <div className="space-y-6">
+            {/* Achievement Cards */}
+            {summary && (
+              <section>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="card-surface p-4">
+                    <Clock className="w-4 h-4 text-success mb-2" />
+                    <p className="text-xs text-text-secondary mb-1">Hours Saved</p>
+                    <p className="text-text-primary text-lg font-semibold">
+                      {summary.total_time_saved_hours.toFixed(1)}h
+                    </p>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
+
+                  <div className="card-surface p-4">
+                    <IndianRupee className="w-4 h-4 text-accent-primary mb-2" />
+                    <p className="text-xs text-text-secondary mb-1">Cost Equiv.</p>
+                    <p className="text-text-primary text-lg font-semibold">
+                      {(summary.total_cost_saved_inr / 1000).toFixed(0)}k
+                    </p>
+                  </div>
+
+                  <div className="card-surface p-4">
+                    <CheckCircle className="w-4 h-4 text-accent-primary mb-2" />
+                    <p className="text-xs text-text-secondary mb-1">Runs Done</p>
+                    <p className="text-text-primary text-lg font-semibold">
+                      {summary.total_runs}
+                    </p>
+                  </div>
+
+                  <div className="card-surface p-4">
+                    <Edit3 className="w-4 h-4 text-warning mb-2" />
+                    <p className="text-xs text-text-secondary mb-1">Corrections</p>
+                    <p className="text-text-primary text-lg font-semibold">
+                      {summary.total_corrections_captured}
+                    </p>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* Brand Hub */}
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-text-secondary text-sm font-medium">Brand Hub</h2>
+                <span className="text-xs text-text-tertiary">
+                  {styleMemory?.total ?? 0}
+                </span>
+              </div>
+
+              {!styleMemory || styleMemory.categories.length === 0 ? (
+                <div className="card-surface p-5 text-xs text-text-secondary text-center">
+                  No corrections yet.
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {styleMemory.categories.slice(0, 3).map((category) => {
+                    const entries = styleMemory.by_category[category] || [];
+                    return (
+                      <div key={category} className="card-surface p-4">
+                        <p className="text-xs font-semibold text-text-primary capitalize mb-2">
+                          {category}
+                        </p>
+                        <ul className="space-y-1 text-xs text-text-secondary">
+                          {entries.slice(0, 2).map((entry, idx) => (
+                            <li key={`${category}-${idx}`} className="line-clamp-1">
+                              {entry}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          </div>
+        </div>
       </main>
 
       {/* Creation Slide-over */}

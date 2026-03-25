@@ -36,15 +36,15 @@ function formatDate(iso: string): string {
 function getStatusBadge(status: RunSummary['status']) {
   switch (status) {
     case 'completed':
-      return { label: 'Completed', classes: 'bg-success/10 text-success' };
+      return { label: 'Completed', classes: 'bg-success text-white' };
     case 'running':
-      return { label: 'Processing', classes: 'badge-processing bg-accent-primary/10 text-accent-primary' };
+      return { label: 'Processing', classes: 'badge-processing bg-accent-primary text-white' };
     case 'awaiting_approval':
-      return { label: 'Awaiting Review', classes: 'bg-warning/10 text-warning' };
+      return { label: 'Awaiting Review', classes: 'bg-warning text-white' };
     case 'failed':
-      return { label: 'Failed', classes: 'bg-error/10 text-error' };
+      return { label: 'Failed', classes: 'bg-error text-white' };
     case 'escalated':
-      return { label: 'Escalated', classes: 'bg-orange-500/10 text-orange-500' };
+      return { label: 'Escalated', classes: 'bg-orange-500 text-white' };
   }
 }
 

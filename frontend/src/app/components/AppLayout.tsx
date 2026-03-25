@@ -58,8 +58,12 @@ export function AppLayout() {
       <motion.aside
         animate={{ width: collapsed ? 64 : 240 }}
         transition={{ duration: 0.25, ease: 'easeInOut' }}
-        className="fixed inset-y-0 left-0 z-30 flex flex-col bg-bg-primary"
-        style={{ boxShadow: 'var(--shadow-md, 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1))' }}
+        className="fixed inset-y-0 left-0 z-30 flex flex-col"
+        style={{
+          background: 'rgba(244, 245, 247, 0.7)',
+          backdropFilter: 'blur(12px)',
+          boxShadow: 'var(--shadow-md, 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1))',
+        }}
       >
         {/* Sidebar toggle */}
         <div className="flex items-center justify-end px-3 py-3">
@@ -81,7 +85,7 @@ export function AppLayout() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ delay: 0.1 }}
-                  className="mb-2 block px-3 text-[10px] font-semibold uppercase tracking-wider text-text-secondary"
+                  className="mb-3 block px-3 text-xs font-bold uppercase tracking-widest text-text-secondary"
                 >
                   {section.title}
                 </motion.span>
@@ -137,7 +141,7 @@ export function AppLayout() {
         {/* Global Header */}
         <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-border-default bg-white/80 px-6 backdrop-blur">
           {/* Left: App name */}
-          <span className="text-base font-semibold text-text-primary">NarrativeOps</span>
+          <span className="text-base font-semibold text-text-primary">Lumina</span>
 
           {/* Center: Search */}
           <div className="mx-4 flex max-w-md flex-1 items-center">

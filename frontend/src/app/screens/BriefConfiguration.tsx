@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import {
   ArrowLeft,
@@ -12,6 +12,7 @@ import {
   Loader2,
   CircleCheck,
   TriangleAlert,
+  CheckCircle2,
 } from 'lucide-react';
 
 import { startPipeline, uploadBrandGuide } from '../../api/client';
@@ -109,6 +110,27 @@ export function BriefConfiguration() {
     return 'general';
   };
 
+  // Smart defaults: auto-select tone and channels based on detected category
+  useEffect(() => {
+    if (!brief.trim()) return;
+    
+    const category = detectCategory(brief);
+    let suggestedTone = 'Accessible';
+    let suggestedChannels: OutputOption[] = ['blog', 'twitter'];
+
+    if (category === 'mutual_fund') {
+      suggestedTone = 'Analytical';
+      suggestedChannels = ['blog', 'linkedin', 'twitter'];
+    } else if (category === 'fintech') {
+      suggestedTone = 'Authoritative';
+      suggestedChannels = ['blog', 'twitter', 'linkedin'];
+    }
+
+    // Auto-apply suggestions only if user hasn't explicitly changed them
+    setSelectedTone(suggestedTone);
+    setSelectedChannels(suggestedChannels);
+  }, [brief]);
+
   const processSelectedFile = async (file: File) => {
     setPdfFile(file);
     setIsUploading(true);
@@ -193,7 +215,7 @@ export function BriefConfiguration() {
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div className="text-text-primary font-semibold">NarrativeOps</div>
+          <div className="text-text-primary font-semibold">Lumina</div>
         </div>
 
         {/* Scrollable Content */}
@@ -410,11 +432,46 @@ export function BriefConfiguration() {
         </div>
 
         {/* Sticky Bottom CTA */}
-        <div className="border-t border-border-default p-6">
+        <div className="border-t border-border-default p-6 space-y-4">
+          {/* Pipeline Breadcrumbs */}
+          <div className="mb-4">
+            <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-widest mb-3">
+              Your pipeline
+            </h3>
+            <div className="flex items-center justify-between gap-2 text-xs">
+              {[
+                { label: 'Intake', ready: !!brief.trim() },
+                { label: 'Trend', ready: !!brief.trim() },
+                { label: 'Compliance', ready: rulesExtracted !== null || !pdfFile },
+                { label: 'Format', ready: selectedChannels.length > 0 },
+                { label: 'Finalize', ready: !!selectedTone },
+              ].map((step, index) => (
+                <div key={step.label} className="flex items-center gap-1 flex-1">
+                  <div
+                    className={`flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-medium ${
+                      step.ready
+                        ? 'bg-success text-white'
+                        : 'bg-bg-surface border border-border-default text-text-secondary'
+                    }`}
+                  >
+                    {step.ready ? <CheckCircle2 className="w-3 h-3" /> : index + 1}
+                  </div>
+                  {index < 4 && (
+                    <div
+                      className={`flex-1 h-0.5 mx-0.5 ${
+                        step.ready ? 'bg-success' : 'bg-border-default'
+                      }`}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
           <button
             onClick={handleRunPipeline}
             disabled={isRunning}
-            className="w-full px-6 py-3 bg-accent-primary text-white rounded-md hover:bg-accent-primary/90 transition-colors font-medium"
+            className="w-full px-6 py-3 bg-gradient-to-r from-accent-primary to-accent-secondary text-white rounded-md hover:shadow-lg transition-all font-medium disabled:opacity-60"
           >
             {isRunning ? (
               <span className="inline-flex items-center gap-2">
@@ -422,10 +479,10 @@ export function BriefConfiguration() {
                 Running pipeline...
               </span>
             ) : (
-              'Run NarrativeOps pipeline'
+              'Run Lumina pipeline'
             )}
           </button>
-          {runError && <p className="mt-3 text-sm text-amber-500">{runError}</p>}
+          {runError && <p className="mt-2 text-sm text-amber-500">{runError}</p>}
         </div>
       </div>
 
