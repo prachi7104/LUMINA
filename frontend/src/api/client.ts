@@ -102,6 +102,7 @@ export async function getOutputs(runId: string): Promise<PipelineOutput[]> {
 export async function captureDiff(
   runId: string,
   channel: string,
+  language: string,
   originalText: string,
   correctedText: string,
   category: string,
@@ -112,6 +113,7 @@ export async function captureDiff(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       channel,
+      language,
       original_text: originalText,
       corrected_text: correctedText,
       content_category: category,

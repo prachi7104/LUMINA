@@ -64,7 +64,7 @@ describe('api/client', () => {
       }),
     );
 
-    await captureDiff('run-1', 'blog', 'original', 'corrected', 'mutual_fund');
+    await captureDiff('run-1', 'blog', 'en', 'original', 'corrected', 'mutual_fund');
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, options] = fetchMock.mock.calls[0];
@@ -73,6 +73,7 @@ describe('api/client', () => {
 
     const body = JSON.parse(String((options as RequestInit).body));
     expect(body.channel).toBe('blog');
+    expect(body.language).toBe('en');
     expect(body.original_text).toBe('original');
     expect(body.corrected_text).toBe('corrected');
     expect(body.content_category).toBe('mutual_fund');

@@ -250,7 +250,16 @@ export function ApprovalGate() {
 
     try {
       if (original !== corrected) {
-        await captureDiff(id, tab, original, corrected, contentCategory);
+        const channelForDiff = tab === 'hindi' ? 'article' : tab;
+        const languageForDiff = tab === 'hindi' ? 'hi' : 'en';
+        await captureDiff(
+          id,
+          channelForDiff,
+          languageForDiff,
+          original,
+          corrected,
+          contentCategory,
+        );
         setToast('Correction captured for future drafts');
         setTimeout(() => setToast(''), 3000);
         setOriginalContent((prev) => ({ ...prev, [tab]: corrected }));

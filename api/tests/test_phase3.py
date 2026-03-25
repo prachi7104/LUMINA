@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from api.agents.compliance_agent import run_compliance_agent
 from api.agents.draft_agent import run_draft_agent
 from api.agents.format_agent import run_format_agent
 from api.main import app
@@ -69,8 +70,11 @@ class _DiffClient:
 class _DashboardQuery:
     def __init__(self, rows: list[dict]):
         self.rows = list(rows)
+        self.count: int | None = None
 
-    def select(self, _columns: str):
+    def select(self, _columns: str, count: str | None = None):
+        if count == "exact":
+            self.count = len(self.rows)
         return self
 
     def order(self, _field: str, desc: bool = False):
@@ -291,6 +295,7 @@ async def test_dashboard_summary_returns_aggregate_stats(mocker):
     assert "total_corrections_captured" in body
     assert "most_recent_runs" in body
     assert isinstance(body["most_recent_runs"], list)
+    assert body["total_runs"] == len(runs)
 
 
 @pytest.mark.asyncio
@@ -421,3 +426,17 @@ def test_format_agent_continues_if_metrics_fails(mocker):
     result = run_format_agent(_minimal_format_state())
 
     assert result["pipeline_status"] == "awaiting_approval"
+
+
+def test_compliance_agent_parse_failure_fails_closed(mocker, minimal_content_state):
+    mocker.patch(
+        "api.agents.compliance_agent.call_llm",
+        return_value="not-json-response",
+    )
+
+    result = run_compliance_agent(minimal_content_state("##INTRO\nTest draft"))
+
+    assert result["compliance_verdict"] == "REVISE"
+    assert isinstance(result["compliance_feedback"], list)
+    assert len(result["compliance_feedback"]) >= 1
+    assert result["compliance_feedback"][0].get("rule_id") == "SYSTEM_PARSE"

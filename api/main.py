@@ -87,6 +87,7 @@ class PatchOutputRequest(BaseModel):
 
 class DiffRequest(BaseModel):
     channel: str
+    language: str = "en"
     original_text: str
     corrected_text: str
     content_category: str
@@ -487,6 +488,7 @@ async def capture_pipeline_diff(run_id: str, request: DiffRequest) -> dict:
                 .update({"content": request.corrected_text})
                 .eq("run_id", run_id)
                 .eq("channel", request.channel)
+                .eq("language", request.language)
                 .execute()
             )
 
@@ -589,7 +591,13 @@ async def get_dashboard_summary() -> dict:
         sum_hours = sum(float(row.get("estimated_hours_saved") or 0) for row in metric_rows)
         sum_cost = sum(float(row.get("estimated_cost_saved_inr") or 0) for row in metric_rows)
         sum_corrections = sum(int(row.get("corrections_applied") or 0) for row in metric_rows)
-        total_runs = len(metric_rows)
+
+        total_runs_response = (
+            client.table("pipeline_runs")
+            .select("id", count="exact")
+            .execute()
+        )
+        total_runs = int(getattr(total_runs_response, "count", None) or len(total_runs_response.data or []))
 
         formatted_recent_runs = []
         for run in recent_runs:

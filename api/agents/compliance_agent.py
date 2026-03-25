@@ -174,9 +174,19 @@ DRAFT:
             current_iterations + 1,
             parse_exc,
         )
+        parse_feedback = [
+            {
+                "section": "BODY",
+                "sentence": "",
+                "rule_id": "SYSTEM_PARSE",
+                "severity": "error",
+                "message": "Compliance model response could not be parsed. Manual review required.",
+                "suggested_fix": "Regenerate compliance analysis and re-check all high-risk claims.",
+            }
+        ]
         return {
-            "compliance_verdict": "PASS",
-            "compliance_feedback": [],
+            "compliance_verdict": "REVISE",
+            "compliance_feedback": parse_feedback,
             "compliance_iterations": current_iterations + 1,
             "org_rules_count": len(combined_rules),
             "rules_source": rules_source,
@@ -188,8 +198,8 @@ DRAFT:
                     "action": "checked_compliance",
                     "model": model,
                     "duration_ms": duration_ms,
-                    "verdict": "PASS",
-                    "output_summary": "JSON parse failed — defaulting to PASS",
+                    "verdict": "REVISE",
+                    "output_summary": "JSON parse failed — defaulting to REVISE",
                 }
             ],
         }
