@@ -1,5 +1,14 @@
 export interface PipelineOutput {
-  channel: "blog" | "op_ed" | "explainer_box" | "twitter" | "linkedin" | "whatsapp" | "article";
+  channel:
+    | "blog"
+    | "faq"
+    | "publisher_brief"
+    | "op_ed"
+    | "explainer_box"
+    | "twitter"
+    | "linkedin"
+    | "whatsapp"
+    | "article";
   language: "en" | "hi";
   content: string;
   approved: boolean;

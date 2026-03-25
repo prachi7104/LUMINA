@@ -13,12 +13,14 @@ import type {
   PipelineMetrics,
 } from '../api/types';
 
-type Channel = 'blog' | 'op_ed' | 'explainer_box' | 'twitter' | 'linkedin' | 'whatsapp' | 'hindi';
+type Channel = 'blog' | 'faq' | 'publisher_brief' | 'op_ed' | 'explainer_box' | 'twitter' | 'linkedin' | 'whatsapp' | 'hindi';
 type OutputFormat = 'et_op_ed' | 'et_explainer_box' | 'multi_platform_pack';
-type OutputOption = 'et_op_ed' | 'et_explainer_box' | 'blog' | 'linkedin' | 'whatsapp' | 'twitter';
+type OutputOption = 'et_op_ed' | 'et_explainer_box' | 'blog' | 'faq' | 'publisher_brief' | 'linkedin' | 'whatsapp' | 'twitter';
 
 interface ChannelContent {
   blog?: string;
+  faq?: string;
+  publisher_brief?: string;
   op_ed?: string;
   explainer_box?: string;
   twitter?: string;
@@ -78,6 +80,8 @@ function mapOutputsToContent(outputs: PipelineOutput[]): ChannelContent {
 
   return {
     blog: blogRaw,
+    faq: outputs.find((o) => o.channel === 'faq')?.content || '',
+    publisher_brief: outputs.find((o) => o.channel === 'publisher_brief')?.content || '',
     op_ed: outputs.find((o) => o.channel === 'op_ed')?.content || '',
     explainer_box: outputs.find((o) => o.channel === 'explainer_box')?.content || '',
     twitter: twitterCombined,
@@ -113,6 +117,8 @@ function parseFormatMetadata(events: AuditEvent[]): { format: OutputFormat; opti
           item === 'et_op_ed' ||
           item === 'et_explainer_box' ||
           item === 'blog' ||
+          item === 'faq' ||
+          item === 'publisher_brief' ||
           item === 'linkedin' ||
           item === 'whatsapp' ||
           item === 'twitter'
@@ -121,12 +127,12 @@ function parseFormatMetadata(events: AuditEvent[]): { format: OutputFormat; opti
 
     return {
       format,
-      options: options.length > 0 ? options : ['blog', 'twitter', 'linkedin', 'whatsapp'],
+      options: options.length > 0 ? options : ['blog', 'faq', 'publisher_brief', 'twitter', 'linkedin', 'whatsapp'],
     };
   } catch {
     return {
       format: 'multi_platform_pack',
-      options: ['blog', 'twitter', 'linkedin', 'whatsapp'],
+      options: ['blog', 'faq', 'publisher_brief', 'twitter', 'linkedin', 'whatsapp'],
     };
   }
 }
@@ -143,13 +149,15 @@ export function ApprovalGate() {
   const [originalContent, setOriginalContent] = useState<ChannelContent>({});
   const [metrics, setMetrics] = useState<PipelineMetrics | null>(null);
   const [complianceSummary, setComplianceSummary] = useState<ComplianceAuditSummary | null>(null);
-  const [outputOptions, setOutputOptions] = useState<OutputOption[]>(['blog', 'twitter', 'linkedin', 'whatsapp']);
+  const [outputOptions, setOutputOptions] = useState<OutputOption[]>(['blog', 'faq', 'publisher_brief', 'twitter', 'linkedin', 'whatsapp']);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [toast, setToast] = useState('');
   const [unsavedTabs, setUnsavedTabs] = useState<Set<Channel>>(new Set());
 
   const hasAnyGeneratedOutput = [
     content.blog,
+    content.faq,
+    content.publisher_brief,
     content.op_ed,
     content.explainer_box,
     content.twitter,
@@ -312,6 +320,10 @@ export function ApprovalGate() {
         return FileText;
       case 'explainer_box':
         return FileText;
+      case 'faq':
+        return FileText;
+      case 'publisher_brief':
+        return FileText;
       case 'twitter':
         return Twitter;
       case 'linkedin':
@@ -397,7 +409,7 @@ export function ApprovalGate() {
     }
 
     // Preview mode
-    if (activeTab === 'blog' || activeTab === 'op_ed' || activeTab === 'explainer_box') {
+    if (activeTab === 'blog' || activeTab === 'faq' || activeTab === 'op_ed' || activeTab === 'explainer_box') {
       const hasHtml = /<\/?[a-z][\s\S]*>/i.test(activeContent);
 
       if (!activeContent.trim()) {
@@ -406,6 +418,8 @@ export function ApprovalGate() {
             ? 'No ET op-ed content is available for this run yet.'
             : activeTab === 'explainer_box'
               ? 'No ET explainer box content is available for this run yet.'
+              : activeTab === 'faq'
+                ? 'No FAQ content is available for this run yet.'
               : 'No blog content is available for this run yet.';
 
         return (
@@ -422,6 +436,8 @@ export function ApprovalGate() {
           ? 'ET Op-Ed'
           : activeTab === 'explainer_box'
             ? 'ET Explainer Box'
+            : activeTab === 'faq'
+              ? 'FAQ'
             : 'Blog';
 
       return hasHtml ? (
@@ -478,6 +494,12 @@ export function ApprovalGate() {
   }
   if (outputOptions.includes('blog')) {
     tabs.push({ id: 'blog', label: 'Blog' });
+  }
+  if (outputOptions.includes('faq')) {
+    tabs.push({ id: 'faq', label: 'FAQ' });
+  }
+  if (outputOptions.includes('publisher_brief')) {
+    tabs.push({ id: 'publisher_brief', label: 'Publisher Brief' });
   }
   if (outputOptions.includes('twitter')) {
     tabs.push({ id: 'twitter', label: 'Twitter' });

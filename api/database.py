@@ -94,6 +94,28 @@ def write_pipeline_outputs(run_id: str, outputs: dict, localized_hi: str) -> Non
                 }
             )
 
+        faq_html = str(outputs.get("faq_html", "") or "").strip()
+        if faq_html:
+            rows.append(
+                {
+                    "run_id": run_id,
+                    "channel": "faq",
+                    "language": "en",
+                    "content": faq_html,
+                }
+            )
+
+        publisher_brief = str(outputs.get("publisher_brief", "") or "").strip()
+        if publisher_brief:
+            rows.append(
+                {
+                    "run_id": run_id,
+                    "channel": "publisher_brief",
+                    "language": "en",
+                    "content": publisher_brief,
+                }
+            )
+
         op_ed_html = str(outputs.get("op_ed_html", "") or "").strip()
         if op_ed_html:
             rows.append(

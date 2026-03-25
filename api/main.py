@@ -219,6 +219,8 @@ def _run_pipeline_thread(run_id: str, brief: dict, engagement_data: dict | None)
             "rules_source": "",
             "localized_hi": "",
             "blog_html": "",
+            "faq_html": "",
+            "publisher_brief": "",
             "twitter_thread": [],
             "linkedin_post": "",
             "whatsapp_message": "",

@@ -24,6 +24,8 @@ OUTPUT_OPTION_ORDER = [
     "et_op_ed",
     "et_explainer_box",
     "blog",
+    "faq",
+    "publisher_brief",
     "linkedin",
     "whatsapp",
     "twitter",
@@ -61,7 +63,7 @@ def _get_output_options(state: ContentState) -> list[str]:
             return ["et_op_ed"]
         if legacy == "et_explainer_box":
             return ["et_explainer_box"]
-        return ["blog", "twitter", "linkedin", "whatsapp"]
+        return ["blog", "twitter", "linkedin", "whatsapp", "faq", "publisher_brief"]
 
     return normalized
 
@@ -107,6 +109,14 @@ def run_format_agent(state: ContentState) -> dict:
     if "blog" in output_options:
         schema_lines.append(
             '  "blog_html": "<article> semantic HTML for the primary blog version."'
+        )
+    if "faq" in output_options:
+        schema_lines.append(
+            '  "faq_html": "<section> semantic HTML FAQ with 5-7 Q&A entries relevant to the article."'
+        )
+    if "publisher_brief" in output_options:
+        schema_lines.append(
+            '  "publisher_brief": "Plain text publishing brief with headline options, SEO keywords, distribution notes, and compliance caveats."'
         )
     if "twitter" in output_options:
         schema_lines.append(
@@ -156,6 +166,8 @@ Rules:
     result = _clean_json_response(raw_response)
 
     blog_html = str(result.get("blog_html", ""))
+    faq_html = str(result.get("faq_html", ""))
+    publisher_brief = str(result.get("publisher_brief", ""))
     op_ed_html = str(result.get("op_ed_html", ""))
     explainer_box_html = str(result.get("explainer_box_html", ""))
     linkedin_post = str(result.get("linkedin_post", ""))
@@ -171,6 +183,8 @@ Rules:
 
     output_payload = {
         "blog_html": blog_html,
+        "faq_html": faq_html,
+        "publisher_brief": publisher_brief,
         "op_ed_html": op_ed_html,
         "explainer_box_html": explainer_box_html,
         "twitter_thread": twitter_thread,
@@ -190,7 +204,16 @@ Rules:
                 "selected_output_options": output_options,
             }
         ),
-        "channels": ["blog_html", "op_ed_html", "explainer_box_html", "twitter_thread", "linkedin_post", "whatsapp_message"],
+        "channels": [
+            "blog_html",
+            "faq_html",
+            "publisher_brief",
+            "op_ed_html",
+            "explainer_box_html",
+            "twitter_thread",
+            "linkedin_post",
+            "whatsapp_message",
+        ],
         "twitter_count": len(twitter_thread),
     }
     full_audit_log = state.get("audit_log", []) + [audit_entry]

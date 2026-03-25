@@ -65,6 +65,10 @@ function getComplianceStyle(verdict: string | undefined) {
 
 function getChannelIcon(channel: string) {
   switch (channel.toLowerCase()) {
+    case 'faq':
+      return FileText;
+    case 'publisher_brief':
+      return Newspaper;
     case 'twitter':
       return Twitter;
     case 'linkedin':

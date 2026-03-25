@@ -126,6 +126,7 @@ def _minimal_format_state() -> dict:
         "run_id": "format-run-001",
         "draft": "##INTRO\nHello\n##BODY\nWorld\n##CONCLUSION\nDone",
         "localized_hi": "हिंदी संस्करण",
+        "output_options": ["blog", "faq", "publisher_brief", "twitter", "linkedin", "whatsapp"],
         "compliance_iterations": 2,
         "org_rules_count": 12,
         "trend_sources": ["https://example.com/1", "https://example.com/2"],
@@ -377,6 +378,8 @@ def test_format_agent_saves_metrics(mocker):
         return_value=json.dumps(
             {
                 "blog_html": "<article>Blog</article>",
+                "faq_html": "<section><h2>FAQ</h2></section>",
+                "publisher_brief": "Headline options: A, B, C",
                 "twitter_thread": ["1/2 tweet", "2/2 tweet"],
                 "linkedin_post": "LinkedIn post",
                 "whatsapp_message": "WhatsApp message",
@@ -408,6 +411,8 @@ def test_format_agent_continues_if_metrics_fails(mocker):
         return_value=json.dumps(
             {
                 "blog_html": "<article>Blog</article>",
+                "faq_html": "<section><h2>FAQ</h2></section>",
+                "publisher_brief": "Publisher note",
                 "twitter_thread": ["1/1 tweet"],
                 "linkedin_post": "LinkedIn post",
                 "whatsapp_message": "WhatsApp message",
@@ -426,6 +431,38 @@ def test_format_agent_continues_if_metrics_fails(mocker):
     result = run_format_agent(_minimal_format_state())
 
     assert result["pipeline_status"] == "awaiting_approval"
+
+
+def test_format_agent_generates_faq_and_publisher_outputs(mocker):
+    mocker.patch(
+        "api.agents.format_agent.call_llm",
+        return_value=json.dumps(
+            {
+                "blog_html": "<article>Blog</article>",
+                "faq_html": "<section><h2>FAQ</h2><p>Q1/A1</p></section>",
+                "publisher_brief": "Topline: Market context\nSEO: sip, investing",
+                "twitter_thread": ["1/1 tweet"],
+                "linkedin_post": "LinkedIn post",
+                "whatsapp_message": "WhatsApp message",
+            }
+        ),
+    )
+    write_outputs = mocker.patch("api.agents.format_agent.write_pipeline_outputs", return_value=None)
+    mocker.patch("api.agents.format_agent.write_audit_log", return_value=None)
+    mocker.patch("api.agents.format_agent.update_run_status", return_value=None)
+    mocker.patch("api.agents.format_agent.get_recent_corrections", return_value=[])
+    mocker.patch("api.agents.format_agent.save_pipeline_metrics", return_value=None)
+
+    result = run_format_agent(_minimal_format_state())
+
+    assert "faq_html" in result
+    assert "publisher_brief" in result
+    assert result["faq_html"]
+    assert result["publisher_brief"]
+
+    _, write_kwargs = write_outputs.call_args
+    assert "faq_html" in write_kwargs["outputs"]
+    assert "publisher_brief" in write_kwargs["outputs"]
 
 
 def test_compliance_agent_parse_failure_fails_closed(mocker, minimal_content_state):

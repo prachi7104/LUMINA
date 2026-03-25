@@ -6,6 +6,7 @@ import {
   Linkedin,
   MessageCircle,
   FileText,
+  Newspaper,
   ChevronDown,
   ChevronUp,
   Loader2,
@@ -23,6 +24,18 @@ const PUBLISH_OPTIONS = [
     label: 'Blog',
     icon: FileText,
     description: 'Long-form blog output view.',
+  },
+  {
+    id: 'faq',
+    label: 'FAQ',
+    icon: FileText,
+    description: 'Customer-facing Q&A set for support and distribution.',
+  },
+  {
+    id: 'publisher_brief',
+    label: 'Publisher Brief',
+    icon: Newspaper,
+    description: 'Editorial launch notes with SEO and distribution guidance.',
   },
   {
     id: 'twitter',
