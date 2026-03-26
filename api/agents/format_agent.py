@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from typing import Any
 
@@ -98,37 +99,43 @@ def _clean_json_response(raw_response: str) -> dict[str, Any]:
     return json.loads(cleaned)
 
 
-def _validate_twitter_thread(thread: list[str]) -> list[str]:
-    validated: list[str] = []
-    for tweet in thread:
-        text = str(tweet)
-        if len(text) > 280:
-            text = text[:280]
-        validated.append(text)
-    return validated
+def _partial_recover_json(raw: str) -> dict[str, Any]:
+    """
+    Best-effort recovery from truncated LLM JSON response.
+    Tries to extract complete string fields before truncation and falls back to
+    empty defaults so pipeline execution can continue.
+    """
+    recovered: dict[str, Any] = {
+        "blog_html": "",
+        "faq_html": "",
+        "publisher_brief": "",
+        "op_ed_html": "",
+        "explainer_box_html": "",
+        "twitter_thread": [],
+        "linkedin_post": "",
+        "whatsapp_message": "",
+    }
+
+    pattern = r'"(\w+)":\s*"((?:[^"\\]|\\.)*)"'
+    for match in re.finditer(pattern, raw):
+        key, value = match.group(1), match.group(2)
+        if key in recovered:
+            recovered[key] = value.replace("\\n", "\n").replace('\\"', '"')
+
+    return recovered
 
 
-def _build_hindi_whatsapp_variant(localized_hi: str) -> str:
-    """Create a compact WhatsApp-ready Hindi variant from localized article content."""
-    if not localized_hi:
-        return ""
-
-    text = localized_hi.replace("##INTRO", "").replace("##BODY", "").replace("##CONCLUSION", "")
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    compact = "\n".join(lines[:5]).strip()
-
-    if len(compact) > 500:
-        compact = compact[:500].rstrip() + "..."
-
-    return compact
-
-
-def run_format_agent(state: ContentState) -> dict:
-    """Format compliance-passed draft into channel-specific outputs."""
-    draft = state.get("draft", "")
-    run_id = state.get("run_id", "")
-    model = "llama-3.1-8b-instant"
-    output_options = _get_output_options(state)
+def _call_format_llm(
+    model: str,
+    draft: str,
+    output_options: list[str],
+    state: ContentState,
+    run_id: str,
+    max_tokens: int,
+) -> dict[str, Any]:
+    """Run a single formatting LLM call and parse with recovery fallback."""
+    if not output_options:
+        return {}
 
     schema_lines = ["{"]
     if "et_op_ed" in output_options:
@@ -194,17 +201,102 @@ Rules:
     if preferred_channel:
         user_prompt += f"\n\nPRIORITIZE THIS CHANNEL IN QUALITY AND ADAPTATION: {preferred_channel}"
 
-    start_time = time.time()
     raw_response = call_llm(
         model=model,
         system=system_prompt,
         user=user_prompt,
-        max_tokens=2500,
+        max_tokens=max_tokens,
         json_mode=True,
     )
-    duration_ms = int((time.time() - start_time) * 1000)
 
-    result = _clean_json_response(raw_response)
+    try:
+        return _clean_json_response(raw_response)
+    except (json.JSONDecodeError, ValueError) as parse_exc:
+        logger.warning(
+            "Format agent JSON parse failed for run_id=%s (attempt partial recovery): %s",
+            run_id,
+            parse_exc,
+        )
+        return _partial_recover_json(raw_response)
+
+
+def _validate_twitter_thread(thread: list[str]) -> list[str]:
+    validated: list[str] = []
+    for tweet in thread:
+        text = str(tweet)
+        if len(text) > 280:
+            text = text[:280]
+        validated.append(text)
+    return validated
+
+
+def _build_hindi_whatsapp_variant(localized_hi: str) -> str:
+    """Create a compact WhatsApp-ready Hindi variant from localized article content."""
+    if not localized_hi:
+        return ""
+
+    text = localized_hi.replace("##INTRO", "").replace("##BODY", "").replace("##CONCLUSION", "")
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    compact = "\n".join(lines[:5]).strip()
+
+    if len(compact) > 500:
+        compact = compact[:500].rstrip() + "..."
+
+    return compact
+
+
+def run_format_agent(state: ContentState) -> dict:
+    """Format compliance-passed draft into channel-specific outputs."""
+    draft = state.get("draft", "")
+    run_id = state.get("run_id", "")
+    model = "llama-3.1-8b-instant"
+    output_options = _get_output_options(state)
+
+    long_form_set = {"et_op_ed", "et_explainer_box", "blog", "faq", "publisher_brief"}
+    social_set = {"twitter", "linkedin", "whatsapp"}
+
+    long_form_opts = [option for option in output_options if option in long_form_set]
+    social_opts = [option for option in output_options if option in social_set]
+
+    start_time = time.time()
+    selected_format = _get_output_format(state)
+    should_split_pack = selected_format == "multi_platform_pack" and len(output_options) >= 5
+
+    result: dict[str, Any] = {}
+    if should_split_pack:
+        if long_form_opts:
+            result.update(
+                _call_format_llm(
+                    model=model,
+                    draft=draft,
+                    output_options=long_form_opts,
+                    state=state,
+                    run_id=run_id,
+                    max_tokens=4096,
+                )
+            )
+        if social_opts:
+            result.update(
+                _call_format_llm(
+                    model=model,
+                    draft=draft,
+                    output_options=social_opts,
+                    state=state,
+                    run_id=run_id,
+                    max_tokens=2048,
+                )
+            )
+    else:
+        result = _call_format_llm(
+            model=model,
+            draft=draft,
+            output_options=output_options,
+            state=state,
+            run_id=run_id,
+            max_tokens=4096,
+        )
+
+    duration_ms = int((time.time() - start_time) * 1000)
 
     blog_html = str(result.get("blog_html", ""))
     faq_html = str(result.get("faq_html", ""))
@@ -244,7 +336,7 @@ Rules:
         "output_summary": json.dumps(
             {
                 "format": "output_format_v1",
-                "selected_output_format": _get_output_format(state),
+                "selected_output_format": selected_format,
                 "selected_output_options": output_options,
             }
         ),

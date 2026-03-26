@@ -1,19 +1,22 @@
+import asyncio
 import uuid
 from types import SimpleNamespace
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from api.main import SSE_QUEUES, SSE_TERMINAL_EVENTS, app
+from api.main import SSE_COMPLETED_AT, SSE_QUEUES, SSE_TERMINAL_EVENTS, app
 
 
 @pytest.fixture(autouse=True)
 def clear_sse_queues():
     SSE_QUEUES.clear()
     SSE_TERMINAL_EVENTS.clear()
+    SSE_COMPLETED_AT.clear()
     yield
     SSE_QUEUES.clear()
     SSE_TERMINAL_EVENTS.clear()
+    SSE_COMPLETED_AT.clear()
 
 
 @pytest.mark.asyncio
@@ -54,6 +57,26 @@ async def test_stream_returns_404_for_unknown_run():
         response = await client.get("/api/pipeline/nonexistent-id/stream")
 
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_cancel_pipeline_marks_run_and_clears_sse_state(mocker):
+    mock_update = mocker.patch("api.main.database.update_run_status", return_value=None)
+
+    run_id = "run-cancel-123"
+    SSE_QUEUES[run_id] = asyncio.Queue()
+    SSE_TERMINAL_EVENTS[run_id] = {"type": "pipeline_complete", "run_id": run_id}
+    SSE_COMPLETED_AT[run_id] = 1.0
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(f"/api/pipeline/{run_id}/cancel")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "cancelled", "run_id": run_id}
+    mock_update.assert_called_once_with(run_id, "cancelled")
+    assert run_id not in SSE_QUEUES
+    assert run_id not in SSE_TERMINAL_EVENTS
+    assert run_id not in SSE_COMPLETED_AT
 
 
 @pytest.mark.asyncio

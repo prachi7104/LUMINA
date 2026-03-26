@@ -75,7 +75,15 @@ def call_llm(
         try:
             logger.info(f"Groq attempt {attempt}/3 for model {model}")
             response = groq_client.chat.completions.create(**request_params)
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            if content is None:
+                logger.warning(
+                    "LLM returned None content for model=%s on attempt %s. Returning empty string.",
+                    model,
+                    attempt,
+                )
+                return ""
+            return content
 
         except (RateLimitError, APIStatusError) as e:
             if isinstance(e, APIStatusError) and e.status_code != 429:
@@ -111,7 +119,10 @@ def call_llm(
     try:
         logger.info("Calling Google AI Studio (gemini-2.5-flash) as fallback")
         response = google_client.chat.completions.create(**fallback_params)
-        return response.choices[0].message.content
+        content = response.choices[0].message.content
+        if content is None:
+            raise RuntimeError("Google AI Studio returned None content for model=gemini-2.5-flash")
+        return content
 
     except Exception as e:
         logger.error(f"Google AI Studio fallback failed: {e}")

@@ -4,6 +4,7 @@ import { StopCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 
 import { usePipelineSSE, AGENT_ID_MAP } from '../../hooks/usePipelineSSE';
+import { cancelPipeline } from '../../api/client';
 import { AgentFlowMap } from '../components/AgentFlowMap';
 
 type AgentStatus = 'pending' | 'running' | 'done' | 'warning' | 'error' | 'skipped';
@@ -152,6 +153,17 @@ export function PipelineRunning() {
 
   usePipelineSSE(runId || null, onAgentUpdate, onHumanRequired, onError, onComplete);
 
+  const handleStop = useCallback(async () => {
+    if (runId) {
+      try {
+        await cancelPipeline(runId);
+      } catch {
+        // Best-effort cancellation; still navigate away.
+      }
+    }
+    navigate('/');
+  }, [runId, navigate]);
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -256,7 +268,7 @@ export function PipelineRunning() {
         </div>
 
         <button
-          onClick={() => navigate('/')}
+          onClick={handleStop}
           className="flex items-center gap-2 px-3 md:px-4 py-2 text-text-secondary hover:text-error transition-colors"
         >
           <StopCircle className="w-4 h-4" />

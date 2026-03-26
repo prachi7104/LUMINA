@@ -23,13 +23,19 @@ def route_after_compliance(state: ContentState) -> str:
         - "human_escalation" if rejected or max iterations reached
         - "draft_agent" if revision needed and iterations < 3
     """
-    if state["compliance_verdict"] == "PASS":
+    verdict = state["compliance_verdict"]
+    iterations = state["compliance_iterations"]
+
+    # PASS always wins, even when iteration counter reached max.
+    if verdict == "PASS":
         return "localization_agent"
 
-    if state["compliance_iterations"] >= 3:
+    # Hard reject escalates directly.
+    if verdict == "REJECT":
         return "human_escalation"
 
-    if state["compliance_verdict"] == "REJECT":
+    # REVISE with exhausted attempts escalates.
+    if iterations >= 3:
         return "human_escalation"
 
     # Otherwise: REVISE and iterations < 3

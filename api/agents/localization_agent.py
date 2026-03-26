@@ -25,7 +25,11 @@ def run_localization_agent(state: ContentState) -> dict:
         dict: State updates with localized_hi content
     """
     # F3: Skip Hindi localization if user did not request it
-    target_languages = state.get("brief", {}).get("target_languages", ["en", "hi"])
+    target_languages = (
+        state.get("target_languages")
+        or state.get("brief", {}).get("target_languages")
+        or ["en", "hi"]
+    )
     if "hi" not in target_languages:
         return {
             "localized_hi": "",

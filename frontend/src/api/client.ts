@@ -94,6 +94,12 @@ export async function rejectPipeline(runId: string): Promise<{ status: string }>
   return (await response.json()) as { status: string };
 }
 
+export async function cancelPipeline(runId: string): Promise<void> {
+  const endpoint = `${BASE_URL}/api/pipeline/${runId}/cancel`;
+  const response = await fetch(endpoint, { method: "POST" });
+  await assertOk(response, endpoint);
+}
+
 export async function getOutputs(runId: string): Promise<PipelineOutput[]> {
   const endpoint = `${BASE_URL}/api/pipeline/${runId}/outputs`;
   const response = await fetch(endpoint);

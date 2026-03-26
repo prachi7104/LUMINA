@@ -7,8 +7,9 @@ import json
 import logging
 import sys
 import threading
+import time
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
@@ -34,7 +35,25 @@ logger = logging.getLogger(__name__)
 
 SSE_QUEUES: dict[str, asyncio.Queue] = {}
 SSE_TERMINAL_EVENTS: dict[str, dict] = {}
+SSE_COMPLETED_AT: dict[str, float] = {}
 APP_EVENT_LOOP: asyncio.AbstractEventLoop | None = None
+
+
+async def _cleanup_stale_queues() -> None:
+    """Remove stale SSE state for completed runs to avoid memory growth."""
+    while True:
+        await asyncio.sleep(60)
+        now = time.time()
+        stale_run_ids = [
+            run_id
+            for run_id, completed_at in SSE_COMPLETED_AT.items()
+            if (now - completed_at) > 60
+        ]
+        for run_id in stale_run_ids:
+            SSE_QUEUES.pop(run_id, None)
+            SSE_TERMINAL_EVENTS.pop(run_id, None)
+            SSE_COMPLETED_AT.pop(run_id, None)
+            logger.debug("Cleaned up stale SSE state for run_id=%s", run_id)
 
 
 @asynccontextmanager
@@ -45,8 +64,14 @@ async def lifespan(app: FastAPI):
     seed_default_rules()
     global APP_EVENT_LOOP
     APP_EVENT_LOOP = asyncio.get_running_loop()
+    cleanup_task = asyncio.create_task(_cleanup_stale_queues())
     logger.info("Lumina API starting")
-    yield
+    try:
+        yield
+    finally:
+        cleanup_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await cleanup_task
 
 
 app = FastAPI(title="Lumina API", lifespan=lifespan)
@@ -98,6 +123,7 @@ def _emit_sse(run_id: str, event: dict) -> None:
     event_type = str(event.get("type") or "")
     if event_type in {"human_required", "error", "pipeline_complete"}:
         SSE_TERMINAL_EVENTS[run_id] = event
+        SSE_COMPLETED_AT[run_id] = time.time()
 
     if APP_EVENT_LOOP is None:
         logger.error("Cannot emit SSE event; app event loop is not initialized")
@@ -234,8 +260,15 @@ def _run_pipeline_thread(run_id: str, brief: dict, engagement_data: dict | None)
         }
 
         latest_pipeline_status = "running"
+        cancelled_by_user = False
 
         for update in pipeline.stream(initial_state, config, stream_mode="updates"):
+            run_record = database.get_run(run_id)
+            if run_record and str(run_record.get("status") or "").lower() == "cancelled":
+                logger.info("Pipeline run_id=%s cancelled by user, stopping stream.", run_id)
+                cancelled_by_user = True
+                break
+
             status = _extract_pipeline_status(update)
             if status:
                 latest_pipeline_status = status
@@ -253,7 +286,16 @@ def _run_pipeline_thread(run_id: str, brief: dict, engagement_data: dict | None)
         final_values = getattr(checkpoint_state, "values", {}) or {}
         final_audit_log = final_values.get("audit_log", [])
 
-        if latest_pipeline_status == "awaiting_approval":
+        if cancelled_by_user:
+            _emit_sse(
+                run_id,
+                {
+                    "type": "error",
+                    "run_id": run_id,
+                    "message": "Pipeline cancelled by user.",
+                },
+            )
+        elif latest_pipeline_status == "awaiting_approval":
             _emit_sse(
                 run_id,
                 {
@@ -293,8 +335,8 @@ def _run_pipeline_thread(run_id: str, brief: dict, engagement_data: dict | None)
             },
         )
     finally:
-        # Stream lifecycle owns cleanup so terminal events remain readable by the client.
-        pass
+        # Cleanup is handled by stream disconnect and stale-state cleanup task.
+        return
 
 
 def _resume_pipeline_sync(run_id: str) -> None:
@@ -383,6 +425,16 @@ async def run_pipeline(request: RunRequest) -> dict:
     return {"run_id": run_id, "status": "started"}
 
 
+@app.post("/api/pipeline/{run_id}/cancel")
+async def cancel_pipeline(run_id: str) -> dict:
+    """Mark a pipeline run as cancelled and clear live SSE queue state."""
+    database.update_run_status(run_id, "cancelled")
+    SSE_QUEUES.pop(run_id, None)
+    SSE_TERMINAL_EVENTS.pop(run_id, None)
+    SSE_COMPLETED_AT.pop(run_id, None)
+    return {"status": "cancelled", "run_id": run_id}
+
+
 @app.get("/api/pipeline/{run_id}/stream")
 async def stream_pipeline(run_id: str) -> StreamingResponse:
     queue = SSE_QUEUES.get(run_id)
@@ -419,6 +471,7 @@ async def stream_pipeline(run_id: str) -> StreamingResponse:
             # A3: Clean up SSE queue when stream disconnects
             SSE_QUEUES.pop(run_id, None)
             SSE_TERMINAL_EVENTS.pop(run_id, None)
+            SSE_COMPLETED_AT.pop(run_id, None)
 
     return StreamingResponse(
         event_generator(),

@@ -1,4 +1,5 @@
 import {
+  cancelPipeline,
   captureDiff,
   getOutputs,
   listRuns,
@@ -56,6 +57,22 @@ describe('api/client', () => {
     expect(String(url)).toContain('/api/upload-guide');
     expect((options as RequestInit).method).toBe('POST');
     expect((options as RequestInit).body).toBeInstanceOf(FormData);
+  });
+
+  it('cancelPipeline sends correct request', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ status: 'cancelled' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await cancelPipeline('run-123');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('/api/pipeline/run-123/cancel');
+    expect((options as RequestInit).method).toBe('POST');
   });
 
   it('captureDiff sends correct payload', async () => {
