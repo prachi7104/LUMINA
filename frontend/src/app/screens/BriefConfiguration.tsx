@@ -94,6 +94,8 @@ export function BriefConfiguration() {
   const [selectedChannels, setSelectedChannels] = useState<OutputOption[]>(['blog', 'twitter']);
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>(['english']);
   const [selectedTone, setSelectedTone] = useState('Accessible');
+  const [userChangedTone, setUserChangedTone] = useState(false);
+  const [userChangedChannels, setUserChangedChannels] = useState(false);
   const [simulateDataPivot, setSimulateDataPivot] = useState(false);
 
   const detectContentDomain = (text: string): 'mutual_fund' | 'fintech' | 'general' => {
@@ -107,10 +109,10 @@ export function BriefConfiguration() {
     return 'general';
   };
 
-  // Smart defaults: auto-select tone and channels based on detected category
+  // Smart defaults apply only before users make explicit tone/channel choices.
   useEffect(() => {
     if (!brief.trim()) return;
-    
+
     const category = detectContentDomain(brief);
     let suggestedTone = 'Accessible';
     let suggestedChannels: OutputOption[] = ['blog', 'twitter'];
@@ -123,9 +125,12 @@ export function BriefConfiguration() {
       suggestedChannels = ['blog', 'twitter', 'linkedin'];
     }
 
-    // Auto-apply suggestions only if user hasn't explicitly changed them
-    setSelectedTone(suggestedTone);
-    setSelectedChannels(suggestedChannels);
+    if (!userChangedTone) {
+      setSelectedTone(suggestedTone);
+    }
+    if (!userChangedChannels) {
+      setSelectedChannels(suggestedChannels);
+    }
   }, [brief]);
 
   const processSelectedFile = async (file: File) => {
@@ -148,6 +153,7 @@ export function BriefConfiguration() {
   };
 
   const toggleChannel = (id: OutputOption) => {
+    setUserChangedChannels(true);
     setSelectedChannels((prev) =>
       prev.includes(id)
         ? (prev.length === 1 ? prev : prev.filter((c) => c !== id))
@@ -398,7 +404,10 @@ export function BriefConfiguration() {
               {TONES.map((tone, index) => (
                 <button
                   key={tone}
-                  onClick={() => setSelectedTone(tone)}
+                  onClick={() => {
+                    setSelectedTone(tone);
+                    setUserChangedTone(true);
+                  }}
                   className={`flex-1 px-3 py-2 rounded text-xs transition-colors ${
                     selectedTone === tone
                       ? 'bg-accent-primary text-white'

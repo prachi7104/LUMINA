@@ -23,7 +23,7 @@ from api.agents.format_agent import run_format_agent
 from api.agents.intake_agent import run_intake_agent
 from api.agents.localization_agent import run_localization_agent
 from api.agents.trend_agent import run_trend_agent
-from api.graph.routing import route_after_compliance
+from api.graph.routing import route_after_compliance, route_after_intake
 from api.graph.state import ContentState
 
 logger = logging.getLogger(__name__)
@@ -100,7 +100,11 @@ def build_pipeline():
     graph.set_entry_point("intake_agent")
 
     # Add edges
-    graph.add_edge("intake_agent", "trend_agent")
+    graph.add_conditional_edges(
+        "intake_agent",
+        route_after_intake,
+        {"trend_agent": "trend_agent"},
+    )
     graph.add_edge("trend_agent", "draft_agent")
     graph.add_edge("draft_agent", "disclaimer_injector")
     graph.add_edge("disclaimer_injector", "compliance_agent")

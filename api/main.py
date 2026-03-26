@@ -28,6 +28,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from api import database  # noqa: E402
 from api.agents.rule_extractor_agent import extract_rules_from_pdf  # noqa: E402
+from api.agents.rule_extractor_agent import _extract_knowledge_triples  # noqa: E402
 from api.config import settings  # noqa: E402
 from api.graph.state import ContentState  # noqa: E402
 
@@ -37,6 +38,15 @@ SSE_QUEUES: dict[str, asyncio.Queue] = {}
 SSE_TERMINAL_EVENTS: dict[str, dict] = {}
 SSE_COMPLETED_AT: dict[str, float] = {}
 APP_EVENT_LOOP: asyncio.AbstractEventLoop | None = None
+
+MANUAL_BASELINE_BREAKDOWN = {
+    "research_hours": 1.5,
+    "drafting_hours": 2.0,
+    "compliance_review_hours": 1.5,
+    "social_adaptation_hours": 1.0,
+    "localization_hours": 1.5,
+    "editorial_review_hours": 0.5,
+}
 
 
 async def _cleanup_stale_queues() -> None:
@@ -245,6 +255,7 @@ def _run_pipeline_thread(run_id: str, brief: dict, engagement_data: dict | None)
             "compliance_feedback": [],
             "compliance_history": [],
             "compliance_iterations": 0,
+            "corrections_applied_this_run": 0,
             "org_rules_count": 0,
             "rules_source": "",
             "localized_hi": "",
@@ -403,9 +414,24 @@ async def upload_brand_guide(
 
     result = extract_rules_from_pdf(pdf_bytes, session_id)
 
+    knowledge_triples_count = 0
+    try:
+        from pypdf import PdfReader
+
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        pdf_text = "".join(page.extract_text() or "" for page in reader.pages)[:8000]
+        triple_model = "llama-3.1-8b-instant"
+        triples = _extract_knowledge_triples(pdf_text, session_id, triple_model)
+        if triples:
+            database.save_brand_knowledge(session_id, triples)
+            knowledge_triples_count = len(triples)
+    except Exception as exc:
+        logger.warning("Knowledge graph extraction failed (non-fatal) for session_id=%s: %s", session_id, exc)
+
     return {
         "session_id": session_id,
         "rules_extracted": result.get("count", 0),
+        "knowledge_triples": knowledge_triples_count,
         "preview": result.get("preview", []),
         "error": result.get("error"),
     }
@@ -658,6 +684,35 @@ async def capture_pipeline_diff(run_id: str, request: DiffRequest) -> dict:
             diff_summary=diff_summary,
         )
 
+        try:
+            if request.original_text and request.corrected_text:
+                run_data = database.get_run(run_id)
+                if run_data:
+                    brief_json = run_data.get("brief_json") or {}
+                    if isinstance(brief_json, str):
+                        try:
+                            brief_json = json.loads(brief_json)
+                        except (json.JSONDecodeError, ValueError):
+                            brief_json = {}
+
+                    session_id = str(brief_json.get("session_id", "") or "").strip()
+                    if session_id:
+                        triple = {
+                            "entity": f"editorial_pattern_{request.content_category}",
+                            "relation": "requires",
+                            "value": (
+                                f"In {request.channel} content: prefer style of corrected version "
+                                f"over original. Change type: {diff_summary}"
+                            ),
+                            "context": (
+                                f"Category: {request.content_category}, Channel: {request.channel}"
+                            ),
+                            "source": "editorial_feedback",
+                        }
+                        database.save_brand_knowledge(session_id, [triple])
+        except Exception as exc:
+            logger.warning("Failed to store correction as brand knowledge for run_id=%s: %s", run_id, exc)
+
         client = database.get_supabase_client()
         corrections_count = 0
         if client is not None:
@@ -712,13 +767,24 @@ async def get_pipeline_run_metrics(run_id: str) -> dict:
 
         total_duration_ms = int(metrics.get("total_duration_ms") or 0)
         actual_duration_ms = int(metrics.get("actual_duration_ms") or total_duration_ms)
-        baseline_manual_hours = float(metrics.get("baseline_manual_hours") or 7.5)
+        baseline_manual_hours = float(metrics.get("baseline_manual_hours") or 8.0)
         estimated_hours_saved = float(metrics.get("estimated_hours_saved") or 0)
         estimated_cost_saved_inr = float(metrics.get("estimated_cost_saved_inr") or 0)
+        estimated_llm_cost_usd = float(metrics.get("estimated_llm_cost_usd") or 0)
+        cost_efficiency_ratio = float(metrics.get("cost_efficiency_ratio") or 0)
         compliance_iterations = int(metrics.get("compliance_iterations") or 0)
         corrections_applied = int(metrics.get("corrections_applied") or 0)
         rules_checked = int(metrics.get("rules_checked") or 0)
         trend_sources_used = int(metrics.get("trend_sources_used") or 0)
+        rules_source = str(metrics.get("rules_source") or "default")
+
+        actual_hours = actual_duration_ms / (1000 * 60 * 60)
+        cycle_reduction_pct = (
+            ((baseline_manual_hours - actual_hours) / baseline_manual_hours * 100)
+            if baseline_manual_hours > 0
+            else 0.0
+        )
+        agent_timing = database.get_per_agent_timing(run_id)
 
         return {
             "run_id": run_id,
@@ -726,16 +792,26 @@ async def get_pipeline_run_metrics(run_id: str) -> dict:
             "actual_duration_ms": actual_duration_ms,
             "actual_duration_display": _format_duration_ms(actual_duration_ms),
             "baseline_manual_hours": baseline_manual_hours,
+            "baseline_breakdown": MANUAL_BASELINE_BREAKDOWN,
             "total_duration_display": _format_duration_ms(total_duration_ms),
             "estimated_hours_saved": estimated_hours_saved,
-            "time_saved_display": f"{estimated_hours_saved} hours",
+            "time_saved_display": f"{estimated_hours_saved:.1f} hours",
+            "cycle_reduction_pct": round(cycle_reduction_pct, 1),
             "estimated_cost_saved_inr": estimated_cost_saved_inr,
             "cost_saved_display": _format_inr_indian(estimated_cost_saved_inr),
+            "estimated_llm_cost_usd": estimated_llm_cost_usd,
+            "cost_efficiency_ratio": cost_efficiency_ratio,
             "compliance_iterations": compliance_iterations,
             "corrections_applied": corrections_applied,
             "rules_checked": rules_checked,
             "trend_sources_used": trend_sources_used,
-            "brand_rules_used": rules_checked > 8,
+            "brand_rules_used": rules_source in ("org_rules", "brand_guide"),
+            "rules_source_label": (
+                "Custom brand guide"
+                if rules_source in ("org_rules", "brand_guide")
+                else "Default SEBI/ASCI rules"
+            ),
+            "agent_timing": agent_timing,
         }
     except Exception as exc:
         logger.exception("Failed to fetch metrics for run_id=%s: %s", run_id, exc)
@@ -752,6 +828,7 @@ async def get_dashboard_summary() -> dict:
                 "total_time_saved_hours": 0.0,
                 "total_cost_saved_inr": 0.0,
                 "total_corrections_captured": 0,
+                "avg_cycle_reduction_pct": 0.0,
                 "most_recent_runs": [],
             }
 
@@ -774,6 +851,12 @@ async def get_dashboard_summary() -> dict:
         sum_hours = sum(float(row.get("estimated_hours_saved") or 0) for row in metric_rows)
         sum_cost = sum(float(row.get("estimated_cost_saved_inr") or 0) for row in metric_rows)
         sum_corrections = sum(int(row.get("corrections_applied") or 0) for row in metric_rows)
+        completed_runs = [row for row in metric_rows if float(row.get("estimated_hours_saved") or 0) > 0]
+        if completed_runs:
+            avg_hours_saved = sum_hours / len(completed_runs)
+            avg_cycle_reduction_pct = round((avg_hours_saved / 8.0) * 100, 1)
+        else:
+            avg_cycle_reduction_pct = 0.0
 
         total_runs_response = (
             client.table("pipeline_runs")
@@ -804,6 +887,7 @@ async def get_dashboard_summary() -> dict:
             "total_time_saved_hours": float(sum_hours or 0),
             "total_cost_saved_inr": float(sum_cost or 0),
             "total_corrections_captured": int(sum_corrections or 0),
+            "avg_cycle_reduction_pct": avg_cycle_reduction_pct,
             "most_recent_runs": formatted_recent_runs,
         }
     except Exception as exc:

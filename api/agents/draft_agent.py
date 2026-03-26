@@ -7,8 +7,10 @@ import logging
 import time
 
 from api.database import get_recent_corrections
+from api.database import query_brand_knowledge
 from api.graph.state import ContentState
 from api.llm import call_llm
+from api.llm_router import log_routing_decision, route_model
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +91,53 @@ def run_draft_agent(state: ContentState) -> dict:
     is_revision = len(compliance_feedback) > 0
     compliance_history = state.get("compliance_history", [])
 
-    model = "llama-3.3-70b-versatile"
+    session_id = str(state.get("session_id", "") or "").strip()
+    brand_knowledge: list[dict] = []
+    if session_id:
+        try:
+            brand_knowledge = query_brand_knowledge(session_id)
+        except Exception as exc:
+            logger.warning("Failed to load brand knowledge for session_id=%s: %s", session_id, exc)
+
+    brand_kg_context = ""
+    if brand_knowledge:
+        prohibitions = [item for item in brand_knowledge if item.get("relation") == "prohibits"]
+        requirements = [item for item in brand_knowledge if item.get("relation") == "requires"]
+        voice = [item for item in brand_knowledge if item.get("entity") == "brand_voice"]
+        patterns = [
+            item
+            for item in brand_knowledge
+            if str(item.get("entity", "")).startswith("editorial_pattern_")
+        ]
+
+        lines = ["BRAND KNOWLEDGE GRAPH - follow these brand constraints:"]
+        if voice:
+            lines.append(f"Brand voice: {str(voice[0].get('value', ''))}")
+        if prohibitions:
+            lines.append("PROHIBITED:")
+            lines.extend(f"  - {str(item.get('value', ''))}" for item in prohibitions[:5])
+        if requirements:
+            lines.append("REQUIRED:")
+            lines.extend(f"  - {str(item.get('value', ''))}" for item in requirements[:5])
+        if patterns:
+            lines.append("EDITORIAL LEARNINGS:")
+            lines.extend(f"  - {str(item.get('value', ''))}" for item in patterns[:3])
+        brand_kg_context = "\n".join(lines)
+
+    model = route_model(
+        "draft",
+        content_category=content_category,
+        draft_length=len(current_draft.split()) if is_revision else 0,
+        compliance_iteration=int(state.get("compliance_iterations", 0) or 0),
+    )
+    log_routing_decision(
+        "draft",
+        model,
+        reason=(
+            f"category={content_category} iteration={int(state.get('compliance_iterations', 0) or 0)} "
+            f"is_revision={is_revision}"
+        ),
+    )
 
     if is_revision:
         # REVISION MODE: Fix specific flagged sentences
@@ -138,6 +186,9 @@ Return ONLY the complete revised draft. No explanation."""
         if correction_context:
             user_prompt = correction_context + "\n\n" + user_prompt
 
+        if brand_kg_context:
+            user_prompt = brand_kg_context + "\n\n" + user_prompt
+
         action = "revised"
     else:
         # FRESH DRAFT MODE
@@ -168,6 +219,9 @@ Return ONLY the article text with section markers. No explanation."""
 
         if correction_context:
             user_prompt = correction_context + "\n\n" + user_prompt
+
+        if brand_kg_context:
+            user_prompt = brand_kg_context + "\n\n" + user_prompt
 
         if state.get("trend_context"):
             user_prompt += (
@@ -244,6 +298,7 @@ Return ONLY the article text with section markers. No explanation."""
         "draft_version": new_version,
         "compliance_feedback": [],  # Clear after processing
         "pipeline_status": "draft_complete",
+        "corrections_applied_this_run": len(recent_corrections),
         "corrections_applied": len(recent_corrections),
         "audit_log": state.get("audit_log", []) + [audit_entry],
     }

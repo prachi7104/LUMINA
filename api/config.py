@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: str = Field(..., min_length=1)
     SUPABASE_URL: str = Field(..., min_length=1)
     SUPABASE_ANON_KEY: str = Field(..., min_length=1)
+    SUPABASE_SERVICE_ROLE_KEY: str | None = Field(default=None)
     FRONTEND_URL: str = Field(default="https://lumina.vercel.app")
     TAVILY_API_KEY: str | None = None
 

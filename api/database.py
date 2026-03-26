@@ -30,13 +30,16 @@ def get_supabase_client() -> Client | None:
 
         try:
             supabase_url = os.getenv("SUPABASE_URL", "").strip()
-            supabase_anon_key = os.getenv("SUPABASE_ANON_KEY", "").strip()
+            supabase_key = (
+                os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+                or os.getenv("SUPABASE_ANON_KEY", "").strip()
+            )
 
-            if not supabase_url or not supabase_anon_key:
-                logger.error("SUPABASE_URL or SUPABASE_ANON_KEY is missing")
+            if not supabase_url or not supabase_key:
+                logger.error("SUPABASE_URL or SUPABASE key is missing")
                 return None
 
-            _client = create_client(supabase_url, supabase_anon_key)
+            _client = create_client(supabase_url, supabase_key)
             return _client
         except Exception as exc:
             logger.exception("Failed to initialize Supabase client: %s", exc)
@@ -55,7 +58,13 @@ def create_run(run_id: str, brief: dict) -> None:
             "brief_topic": brief.get("topic", "Untitled"),
             "brief_json": brief,
         }
-        client.table("pipeline_runs").insert(payload).execute()
+        response = client.table("pipeline_runs").insert(payload).execute()
+        if not response.data:
+            logger.error(
+                "Supabase insert for pipeline_runs returned empty data for run_id=%s. "
+                "Check RLS policies or service role key configuration.",
+                run_id,
+            )
     except Exception as exc:
         logger.exception("Failed to create run %s: %s", run_id, exc)
     return None
@@ -209,7 +218,13 @@ def write_pipeline_outputs(run_id: str, outputs: dict, localized_hi: str) -> Non
             )
 
         if rows:
-            client.table("pipeline_outputs").insert(rows).execute()
+            response = client.table("pipeline_outputs").insert(rows).execute()
+            if not response.data:
+                logger.error(
+                    "Supabase insert for pipeline_outputs returned empty data for run_id=%s. "
+                    "Check RLS policies or service role key configuration.",
+                    run_id,
+                )
     except Exception as exc:
         logger.exception("Failed to write pipeline outputs for %s: %s", run_id, exc)
     return None
@@ -348,31 +363,57 @@ def save_feedback(
 
 
 def get_past_feedback(topic: str, limit: int = 3) -> list[str]:
-    """Get recent feedback matching the first word of topic."""
+    """Get recent feedback matching significant words in topic."""
     client = get_supabase_client()
     if client is None:
         return []
 
     try:
-        first_word = (topic or "").strip().split()[0] if (topic or "").strip() else ""
-        if not first_word:
+        stop_words = {
+            "the",
+            "and",
+            "for",
+            "with",
+            "from",
+            "that",
+            "this",
+            "what",
+            "how",
+            "best",
+            "new",
+        }
+        words = [
+            word
+            for word in (topic or "").lower().strip().split()
+            if len(word) >= 3 and word not in stop_words
+        ]
+        if not words:
             return []
+
+        primary_word = max(words, key=len)
 
         response = (
             client.table("content_feedback")
-            .select("rating,comment")
-            .ilike("brief_topic", f"%{first_word}%")
+            .select("rating,comment,brief_topic")
+            .ilike("brief_topic", f"%{primary_word}%")
             .order("created_at", desc=True)
-            .limit(limit)
+            .limit(limit * 2)
             .execute()
         )
         rows = response.data or []
 
+        def overlap_score(row: dict) -> int:
+            brief_topic = str(row.get("brief_topic") or "").lower()
+            return sum(1 for word in words if word in brief_topic)
+
+        scored_rows = sorted(rows, key=overlap_score, reverse=True)
+
         formatted_feedback = []
-        for row in rows:
+        for row in scored_rows[:limit]:
             rating = row.get("rating", "?")
             comment = row.get("comment") or ""
-            formatted_feedback.append(f"Rating {rating}/5: {comment}")
+            if comment.strip():
+                formatted_feedback.append(f"Rating {rating}/5: {comment}")
         return formatted_feedback
     except Exception as exc:
         logger.exception("Failed to fetch past feedback for topic '%s': %s", topic, exc)
@@ -439,6 +480,58 @@ def save_org_rules(session_id: str, rules: list[dict]) -> None:
     except Exception as exc:
         logger.exception("Failed to save org rules for session_id=%s: %s", session_id, exc)
     return None
+
+
+def save_brand_knowledge(session_id: str, triples: list[dict]) -> None:
+    """Insert brand knowledge triples for a session."""
+    client = get_supabase_client()
+    if client is None:
+        return None
+
+    try:
+        rows = [
+            {
+                "session_id": session_id,
+                "entity": str(item.get("entity", "")).strip(),
+                "relation": str(item.get("relation", "")).strip(),
+                "value": str(item.get("value", "")).strip(),
+                "context": str(item.get("context", "")).strip(),
+                "source": str(item.get("source", "brand_guide")).strip() or "brand_guide",
+            }
+            for item in triples
+            if str(item.get("entity", "")).strip()
+            and str(item.get("relation", "")).strip()
+            and str(item.get("value", "")).strip()
+        ]
+
+        if rows:
+            client.table("brand_knowledge").insert(rows).execute()
+    except Exception as exc:
+        logger.exception("Failed to save brand knowledge for session_id=%s: %s", session_id, exc)
+    return None
+
+
+def query_brand_knowledge(session_id: str, relation: str | None = None) -> list[dict]:
+    """Query brand knowledge triples for a session, optionally filtered by relation."""
+    client = get_supabase_client()
+    if client is None:
+        return []
+
+    try:
+        query = (
+            client.table("brand_knowledge")
+            .select("entity,relation,value,context,source,created_at")
+            .eq("session_id", session_id)
+            .order("created_at", desc=True)
+        )
+        if relation:
+            query = query.eq("relation", relation)
+
+        response = query.execute()
+        return list(response.data or [])
+    except Exception as exc:
+        logger.exception("Failed to query brand knowledge for session_id=%s: %s", session_id, exc)
+        return []
 
 
 def get_trend_cache(topic_hash: str) -> dict | None:
@@ -545,7 +638,13 @@ def save_pipeline_metrics(run_id: str, metrics: dict) -> None:
 
     try:
         payload = {"run_id": run_id, **metrics}
-        client.table("pipeline_metrics").upsert(payload, on_conflict="run_id").execute()
+        response = client.table("pipeline_metrics").upsert(payload, on_conflict="run_id").execute()
+        if not response.data:
+            logger.error(
+                "Supabase upsert for pipeline_metrics returned empty data for run_id=%s. "
+                "Check RLS policies or service role key configuration.",
+                run_id,
+            )
     except Exception as exc:
         logger.exception("Failed to save pipeline metrics for run_id=%s: %s", run_id, exc)
     return None
@@ -564,6 +663,35 @@ def get_pipeline_metrics(run_id: str) -> dict | None:
     except Exception as exc:
         logger.exception("Failed to get pipeline metrics for run_id=%s: %s", run_id, exc)
         return None
+
+
+def get_per_agent_timing(run_id: str) -> list[dict]:
+    """Return per-agent duration rows from audit events for a run."""
+    client = get_supabase_client()
+    if client is None:
+        return []
+
+    try:
+        response = (
+            client.table("agent_events")
+            .select("agent_name,duration_ms,action,verdict")
+            .eq("run_id", run_id)
+            .order("created_at", desc=False)
+            .execute()
+        )
+        return [
+            {
+                "agent": str(row.get("agent_name") or ""),
+                "action": str(row.get("action") or ""),
+                "duration_ms": int(row.get("duration_ms") or 0),
+                "verdict": row.get("verdict"),
+            }
+            for row in (response.data or [])
+            if row.get("duration_ms")
+        ]
+    except Exception as exc:
+        logger.exception("Failed to get per-agent timing for run_id=%s: %s", run_id, exc)
+        return []
 
 
 def _status_to_compliance(status: str) -> str:

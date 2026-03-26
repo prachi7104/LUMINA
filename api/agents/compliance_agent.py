@@ -8,9 +8,10 @@ import time
 from pathlib import Path
 
 from api.config import settings
-from api.database import get_org_rules
+from api.database import get_org_rules, query_brand_knowledge
 from api.graph.state import ContentState
 from api.llm import call_llm
+from api.llm_router import log_routing_decision, route_model
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,13 @@ def run_compliance_agent(state: ContentState) -> dict:
         combined_rules = _load_json_rules()
         rules_source = "json_file"
 
+    brand_knowledge: list[dict] = []
+    if session_id:
+        try:
+            brand_knowledge = query_brand_knowledge(session_id)
+        except Exception as exc:
+            logger.warning("Failed to load brand knowledge for compliance session_id=%s: %s", session_id, exc)
+
     # Format rules for prompt, including source attribution.
     formatted_rules = "\n".join(
         [
@@ -150,10 +158,34 @@ Critical rules:
 DRAFT:
 {draft}"""
 
+    if brand_knowledge:
+        prohibitions = [item for item in brand_knowledge if item.get("relation") == "prohibits"]
+        requirements = [item for item in brand_knowledge if item.get("relation") == "requires"]
+        kg_lines = ["BRAND KNOWLEDGE CONSTRAINTS:"]
+        if prohibitions:
+            kg_lines.append("- Prohibited patterns:")
+            kg_lines.extend(f"  - {str(item.get('value', ''))}" for item in prohibitions[:8])
+        if requirements:
+            kg_lines.append("- Required patterns:")
+            kg_lines.extend(f"  - {str(item.get('value', ''))}" for item in requirements[:8])
+        user_prompt = "\n".join(kg_lines) + "\n\n" + user_prompt
+
     # Call LLM with timing
     start_time = time.time()
-    model_primary = "llama-3.3-70b-versatile"
-    model_fallback = "llama-3.1-8b-instant"
+    model_primary = route_model(
+        "compliance",
+        content_category=str(state.get("content_category") or "general"),
+        compliance_iteration=current_iterations,
+    )
+    model_fallback = route_model("rule_extraction")
+    log_routing_decision(
+        "compliance",
+        model_primary,
+        reason=(
+            f"category={str(state.get('content_category') or 'general')} "
+            f"iteration={current_iterations}"
+        ),
+    )
 
     raw_response = call_llm(
         model=model_primary,

@@ -8,6 +8,7 @@ import time
 
 from api.graph.state import ContentState
 from api.llm import call_llm
+from api.llm_router import log_routing_decision, route_model
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,21 @@ def _safe_float(value: object) -> float:
         return 0.0
 
 
+def _map_engagement_channel_to_output(channel: str) -> str:
+    normalized = str(channel or "").strip().lower()
+    mapping = {
+        "text_article": "blog",
+        "article": "blog",
+        "blog": "blog",
+        "video": "linkedin",
+        "short_video": "twitter",
+        "linkedin": "linkedin",
+        "twitter": "twitter",
+        "whatsapp": "whatsapp",
+    }
+    return mapping.get(normalized, "")
+
+
 def run_intake_agent(state: ContentState) -> dict:
     """
     Process brief and engagement data to create content strategy.
@@ -129,7 +145,18 @@ Return ONLY the JSON object. No explanation, no markdown, no preamble."""
 
     # Call LLM with timing
     start_time = time.time()
-    model = "llama-3.1-8b-instant"
+    session_id = str(state.get("session_id", "") or "").strip()
+    has_brand_guide = bool(session_id and session_id != "default")
+    model = route_model(
+        "intake",
+        content_category=_detect_content_category(brief),
+        has_brand_guide=has_brand_guide,
+    )
+    log_routing_decision(
+        "intake",
+        model,
+        reason=f"category={_detect_content_category(brief)} has_brand_guide={has_brand_guide}",
+    )
 
     raw_response = call_llm(
         model=model,
@@ -239,7 +266,7 @@ Return ONLY the JSON object. No explanation, no markdown, no preamble."""
         "output_summary": f"format={strategy.get('format')}, tone={strategy.get('tone')}, word_count={strategy.get('word_count')}",
     }
 
-    return {
+    updates = {
         "strategy": strategy,
         "content_category": detected_category,
         "compliance_flags": [str(flag) for flag in compliance_flags if str(flag).strip()],
@@ -247,3 +274,19 @@ Return ONLY the JSON object. No explanation, no markdown, no preamble."""
         "pipeline_status": "intake_complete",
         "audit_log": state.get("audit_log", []) + [audit_entry]
     }
+
+    current_output_options = state.get("output_options", [])
+    if isinstance(current_output_options, list):
+        normalized_options = [str(item).strip() for item in current_output_options if str(item).strip()]
+    else:
+        normalized_options = []
+
+    if engagement_strategy.get("pivot_recommended") and normalized_options:
+        winning_channel = _map_engagement_channel_to_output(
+            str(engagement_strategy.get("top_channel", ""))
+        )
+        if winning_channel and winning_channel in normalized_options:
+            prioritized = [winning_channel] + [opt for opt in normalized_options if opt != winning_channel]
+            updates["output_options"] = prioritized
+
+    return updates

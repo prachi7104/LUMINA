@@ -133,7 +133,9 @@ def _minimal_format_state() -> dict:
             "strategy_recommendation": "Prefer short threaded distribution based on recent engagement.",
         },
         "compliance_iterations": 2,
+        "corrections_applied_this_run": 2,
         "org_rules_count": 12,
+        "rules_source": "org_rules",
         "trend_sources": ["https://example.com/1", "https://example.com/2"],
         "content_category": "mutual_fund",
         "audit_log": [
@@ -228,6 +230,7 @@ async def test_metrics_endpoint_returns_formatted_display(mocker):
             "compliance_iterations": 2,
             "corrections_applied": 1,
             "rules_checked": 12,
+                "rules_source": "org_rules",
             "trend_sources_used": 3,
             "estimated_hours_saved": "7.50",
             "estimated_cost_saved_inr": "11250.00",
@@ -242,6 +245,7 @@ async def test_metrics_endpoint_returns_formatted_display(mocker):
     assert body["time_saved_display"] == "7.5 hours"
     assert "₹" in body["cost_saved_display"]
     assert body["brand_rules_used"] is True
+    assert body["rules_source_label"] == "Custom brand guide"
 
 
 @pytest.mark.asyncio
@@ -268,6 +272,7 @@ async def test_metrics_endpoint_includes_runtime_and_baseline_fields(mocker):
             "compliance_iterations": 1,
             "corrections_applied": 0,
             "rules_checked": 8,
+                "rules_source": "default",
             "trend_sources_used": 1,
         },
     )
@@ -304,6 +309,8 @@ async def test_dashboard_summary_returns_aggregate_stats(mocker):
         {
             "estimated_hours_saved": 7.5,
             "estimated_cost_saved_inr": 11250,
+            "corrections_applied_this_run": 2,
+            "rules_source": "org_rules",
             "corrections_applied": 2,
         },
         {
@@ -326,6 +333,7 @@ async def test_dashboard_summary_returns_aggregate_stats(mocker):
     assert "total_time_saved_hours" in body
     assert "total_cost_saved_inr" in body
     assert "total_corrections_captured" in body
+    assert "avg_cycle_reduction_pct" in body
     assert "most_recent_runs" in body
     assert isinstance(body["most_recent_runs"], list)
     assert body["total_runs"] == len(runs)
@@ -387,7 +395,7 @@ def test_draft_agent_works_without_corrections(mocker):
     result = run_draft_agent(_minimal_draft_state(content_category="general"))
 
     assert "EDITORIAL CORRECTIONS FROM PREVIOUS SIMILAR CONTENT" not in captured["user"]
-    assert result["corrections_applied"] == 0
+    assert result["corrections_applied_this_run"] == 0
 
 
 def test_draft_agent_continues_when_db_fails(mocker):
@@ -421,10 +429,6 @@ def test_format_agent_saves_metrics(mocker):
     mocker.patch("api.agents.format_agent.write_pipeline_outputs", return_value=None)
     mocker.patch("api.agents.format_agent.write_audit_log", return_value=None)
     mocker.patch("api.agents.format_agent.update_run_status", return_value=None)
-    mocker.patch(
-        "api.agents.format_agent.get_recent_corrections",
-        return_value=[{"diff_summary": "x"}, {"diff_summary": "y"}],
-    )
     save_metrics = mocker.patch("api.agents.format_agent.save_pipeline_metrics", return_value=None)
 
     run_format_agent(_minimal_format_state())
@@ -432,9 +436,11 @@ def test_format_agent_saves_metrics(mocker):
     save_metrics.assert_called_once()
     _, metrics_payload = save_metrics.call_args.args
     assert "estimated_hours_saved" in metrics_payload
-    assert 0 <= float(metrics_payload["estimated_hours_saved"]) <= 7.5
+    assert 0 <= float(metrics_payload["estimated_hours_saved"]) <= 8.0
     assert "estimated_cost_saved_inr" in metrics_payload
-    assert 0 <= float(metrics_payload["estimated_cost_saved_inr"]) <= 11250.0
+    assert 0 <= float(metrics_payload["estimated_cost_saved_inr"]) <= 12000.0
+    assert metrics_payload["corrections_applied"] == 2
+    assert metrics_payload["rules_source"] == "org_rules"
 
 
 def test_format_agent_continues_if_metrics_fails(mocker):
@@ -454,7 +460,6 @@ def test_format_agent_continues_if_metrics_fails(mocker):
     mocker.patch("api.agents.format_agent.write_pipeline_outputs", return_value=None)
     mocker.patch("api.agents.format_agent.write_audit_log", return_value=None)
     mocker.patch("api.agents.format_agent.update_run_status", return_value=None)
-    mocker.patch("api.agents.format_agent.get_recent_corrections", return_value=[])
     mocker.patch(
         "api.agents.format_agent.save_pipeline_metrics",
         side_effect=Exception("metrics fail"),
@@ -482,7 +487,6 @@ def test_format_agent_generates_faq_and_publisher_outputs(mocker):
     write_outputs = mocker.patch("api.agents.format_agent.write_pipeline_outputs", return_value=None)
     mocker.patch("api.agents.format_agent.write_audit_log", return_value=None)
     mocker.patch("api.agents.format_agent.update_run_status", return_value=None)
-    mocker.patch("api.agents.format_agent.get_recent_corrections", return_value=[])
     mocker.patch("api.agents.format_agent.save_pipeline_metrics", return_value=None)
 
     result = run_format_agent(_minimal_format_state())
@@ -528,7 +532,6 @@ def test_format_agent_prioritizes_best_channel_in_selected_output_options(mocker
     mocker.patch("api.agents.format_agent.write_pipeline_outputs", return_value=None)
     mocker.patch("api.agents.format_agent.write_audit_log", return_value=None)
     mocker.patch("api.agents.format_agent.update_run_status", return_value=None)
-    mocker.patch("api.agents.format_agent.get_recent_corrections", return_value=[])
     mocker.patch("api.agents.format_agent.save_pipeline_metrics", return_value=None)
 
     result = run_format_agent(_minimal_format_state())
@@ -554,7 +557,6 @@ def test_format_agent_builds_hindi_whatsapp_variant(mocker):
     write_outputs = mocker.patch("api.agents.format_agent.write_pipeline_outputs", return_value=None)
     mocker.patch("api.agents.format_agent.write_audit_log", return_value=None)
     mocker.patch("api.agents.format_agent.update_run_status", return_value=None)
-    mocker.patch("api.agents.format_agent.get_recent_corrections", return_value=[])
     mocker.patch("api.agents.format_agent.save_pipeline_metrics", return_value=None)
 
     run_format_agent(_minimal_format_state())

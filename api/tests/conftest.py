@@ -75,6 +75,7 @@ def minimal_content_state():
             "compliance_feedback": [],
             "compliance_history": [],
             "compliance_iterations": 0,
+            "corrections_applied_this_run": 0,
             "org_rules_count": 0,
             "rules_source": "",
             "localized_hi": "",

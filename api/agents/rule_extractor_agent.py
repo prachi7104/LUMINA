@@ -10,6 +10,7 @@ from pypdf import PdfReader
 
 from api.database import save_org_rules
 from api.llm import call_llm
+from api.llm_router import route_model
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,63 @@ def _validate_rule(rule: dict) -> bool:
     return True
 
 
+def _extract_knowledge_triples(text: str, session_id: str, model: str) -> list[dict]:
+    """Extract entity-relation-value triples from brand guide text."""
+    system_prompt = """You are a brand knowledge extractor.
+From this brand guide document, extract structured facts as triples.
+
+Return ONLY a JSON array of objects with:
+{
+  "entity": "what the fact is about (e.g., 'brand_voice', 'product_name', 'prohibited_claim')",
+  "relation": "the relationship type: is_a | requires | prohibits | describes | uses | avoids",
+  "value": "the fact value",
+  "context": "when/where this applies (optional, can be empty string)"
+}
+
+Extract 10-25 triples. Return ONLY the JSON array."""
+
+    user_prompt = f"Extract knowledge triples from:\n\n{text[:6000]}"
+
+    try:
+        raw = call_llm(
+            model=model,
+            system=system_prompt,
+            user=user_prompt,
+            max_tokens=2000,
+            json_mode=False,
+        )
+        cleaned = _strip_markdown_fences(raw)
+        triples = json.loads(cleaned)
+
+        if not isinstance(triples, list):
+            return []
+
+        cleaned_triples: list[dict] = []
+        for triple in triples[:25]:
+            if not isinstance(triple, dict):
+                continue
+
+            entity = str(triple.get("entity", "")).strip()
+            relation = str(triple.get("relation", "")).strip()
+            value = str(triple.get("value", "")).strip()
+            context = str(triple.get("context", "")).strip()
+
+            if entity and relation and value:
+                cleaned_triples.append(
+                    {
+                        "entity": entity,
+                        "relation": relation,
+                        "value": value,
+                        "context": context,
+                    }
+                )
+
+        return cleaned_triples
+    except Exception as exc:
+        logger.warning("Knowledge triple extraction failed for session_id=%s: %s", session_id, exc)
+        return []
+
+
 def extract_rules_from_pdf(pdf_bytes: bytes, session_id: str) -> dict:
     """
     Extract compliance rules from PDF bytes and persist them for a session.
@@ -94,7 +152,7 @@ def extract_rules_from_pdf(pdf_bytes: bytes, session_id: str) -> dict:
             }
 
         truncated_text = extracted_text[:8000]
-        model = "llama-3.1-8b-instant"
+        model = route_model("rule_extraction")
 
         system_prompt = (
             "You are a compliance rule extractor for financial content teams. "

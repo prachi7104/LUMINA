@@ -21,15 +21,26 @@ export interface PipelineMetrics {
   actual_duration_ms: number;
   actual_duration_display: string;
   baseline_manual_hours: number;
+  baseline_breakdown?: Record<string, number>;
   estimated_hours_saved: number;
   time_saved_display: string;
+  cycle_reduction_pct?: number;
   estimated_cost_saved_inr: number;
   cost_saved_display: string;
+  estimated_llm_cost_usd?: number;
+  cost_efficiency_ratio?: number;
   compliance_iterations: number;
   corrections_applied: number;
   rules_checked: number;
   trend_sources_used: number;
   brand_rules_used: boolean;
+  rules_source_label?: string;
+  agent_timing?: Array<{
+    agent: string;
+    action: string;
+    duration_ms: number;
+    verdict?: string | null;
+  }>;
 }
 
 export interface DiffResponse {
@@ -95,6 +106,7 @@ export interface DashboardSummary {
   total_time_saved_hours: number;
   total_cost_saved_inr: number;
   total_corrections_captured: number;
+  avg_cycle_reduction_pct: number;
   most_recent_runs: PipelineRun[];
 }
 

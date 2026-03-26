@@ -10,7 +10,6 @@ import time
 from typing import Any
 
 from api.database import (
-    get_recent_corrections,
     save_pipeline_metrics,
     update_run_status,
     write_audit_log,
@@ -18,6 +17,7 @@ from api.database import (
 )
 from api.graph.state import ContentState
 from api.llm import call_llm
+from api.llm_router import log_routing_decision, route_model
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,20 @@ OUTPUT_OPTION_ORDER = [
     "whatsapp",
     "twitter",
 ]
+
+MODEL_COST_INDEX = {
+    "llama-3.1-8b-instant": 0.05,
+    "llama-3.3-70b-versatile": 0.59,
+    "gemini-2.5-flash": 0.15,
+}
+
+
+def _resolve_baseline_hours(content_category: str) -> float:
+    """Resolve manual baseline hours with category override support."""
+    normalized = (content_category or "general").strip().lower().replace("-", "_")
+    default_baseline = _get_float_env("MANUAL_BASELINE_HOURS", 8.0)
+    env_key = f"MANUAL_BASELINE_HOURS_{normalized.upper()}"
+    return _get_float_env(env_key, default_baseline)
 
 
 def _get_float_env(name: str, default: float) -> float:
@@ -273,7 +287,15 @@ def run_format_agent(state: ContentState) -> dict:
     """Format compliance-passed draft into channel-specific outputs."""
     draft = state.get("draft", "")
     run_id = state.get("run_id", "")
-    model = "llama-3.1-8b-instant"
+    model = route_model(
+        "format",
+        content_category=str(state.get("content_category") or "general"),
+    )
+    log_routing_decision(
+        "format",
+        model,
+        reason=f"category={str(state.get('content_category') or 'general')}",
+    )
     output_options = _get_output_options(state)
 
     long_form_set = {"et_op_ed", "et_explainer_box", "blog", "faq", "publisher_brief"}
@@ -404,10 +426,9 @@ def run_format_agent(state: ContentState) -> dict:
         agent_count = len([entry for entry in full_audit_log if entry.get("agent")])
 
         category = str(state.get("content_category") or "general").strip() or "general"
-        recent = get_recent_corrections(category, limit=10)
-        corrections_applied = len(recent)
+        corrections_applied = int(state.get("corrections_applied_this_run") or 0)
 
-        baseline_manual_hours = _get_float_env("MANUAL_BASELINE_HOURS", 7.5)
+        baseline_manual_hours = _resolve_baseline_hours(category)
         cost_per_hour_inr = _get_float_env("MANUAL_COST_PER_HOUR_INR", 1500.0)
 
         trend_sources = state.get("trend_sources", [])
@@ -416,17 +437,34 @@ def run_format_agent(state: ContentState) -> dict:
         actual_duration_hours = total_duration_ms / (1000 * 60 * 60)
         estimated_hours_saved = max(0.0, baseline_manual_hours - actual_duration_hours)
 
+        estimated_llm_cost_usd = 0.0
+        for entry in full_audit_log:
+            model_name = str(entry.get("model") or "")
+            duration = int(entry.get("duration_ms") or 0)
+            cost_per_1m = MODEL_COST_INDEX.get(model_name, 0.1)
+            tokens_per_sec = 200 if "70b" in model_name.lower() else 800
+            estimated_tokens = (duration / 1000) * tokens_per_sec
+            estimated_llm_cost_usd += (estimated_tokens / 1_000_000) * cost_per_1m
+
+        cost_efficiency_ratio = (
+            estimated_hours_saved * (cost_per_hour_inr / 80) / max(estimated_llm_cost_usd, 0.001)
+        )
+
         metrics_dict = {
             "total_duration_ms": total_duration_ms,
             "actual_duration_ms": total_duration_ms,
             "baseline_manual_hours": baseline_manual_hours,
+            "baseline_content_category": category,
             "agent_count": agent_count,
             "compliance_iterations": state.get("compliance_iterations", 0),
             "corrections_applied": corrections_applied,
             "rules_checked": state.get("org_rules_count", 8),
+            "rules_source": state.get("rules_source", "default"),
             "trend_sources_used": trend_sources_used,
             "estimated_hours_saved": round(estimated_hours_saved, 2),
             "estimated_cost_saved_inr": round(estimated_hours_saved * cost_per_hour_inr, 2),
+            "estimated_llm_cost_usd": round(estimated_llm_cost_usd, 4),
+            "cost_efficiency_ratio": round(cost_efficiency_ratio, 1),
         }
         save_pipeline_metrics(state["run_id"], metrics_dict)
 

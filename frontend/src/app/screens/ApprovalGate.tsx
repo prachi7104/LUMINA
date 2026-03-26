@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router';
 import { Twitter, Linkedin, MessageCircle, FileText, Edit3, ArrowLeft } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { motion, useAnimation, useMotionValue, useTransform } from 'motion/react';
+import DOMPurify from 'dompurify';
 
 import {
   getOutputs,
@@ -17,6 +18,7 @@ import type {
   AuditEvent,
   ComplianceAnnotation,
   ComplianceAuditSummary,
+  EngagementStrategyResponse,
   PipelineOutput,
   PipelineMetrics,
 } from '../api/types';
@@ -188,6 +190,13 @@ export function ApprovalGate() {
     content.hindi,
   ].some((value) => (value || '').trim().length > 0);
 
+  const slowestAgentTiming = metrics?.agent_timing?.reduce((slowest, current) => {
+    if (!slowest || current.duration_ms > slowest.duration_ms) {
+      return current;
+    }
+    return slowest;
+  }, undefined as PipelineMetrics['agent_timing'] extends Array<infer T> ? T | undefined : undefined);
+
   const loadRunData = useCallback(async (withSpinner = false) => {
     if (!id) return;
     if (withSpinner) {
@@ -324,7 +333,7 @@ export function ApprovalGate() {
     try {
       await approvePipeline(id);
       confetti({ particleCount: 80, spread: 70, colors: ['#7C3AED', '#06B6D4', '#10B981'] });
-      setTimeout(() => navigate('/pipelines'), 1200);
+      setTimeout(() => navigate(`/audit/${id}`), 1400);
     } catch (err) {
       console.error('Approve failed:', err);
     }
@@ -483,7 +492,17 @@ export function ApprovalGate() {
           <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-gray-500">{label}</p>
           <div
             className="prose max-w-none"
-            dangerouslySetInnerHTML={{ __html: activeContent }}
+            dangerouslySetInnerHTML={{
+              __html: DOMPurify.sanitize(activeContent, {
+                ALLOWED_TAGS: [
+                  'p', 'br', 'strong', 'em', 'b', 'i', 'u', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+                  'ul', 'ol', 'li', 'blockquote', 'article', 'section', 'header', 'footer',
+                  'div', 'span', 'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
+                ],
+                ALLOWED_ATTR: ['href', 'class', 'id', 'target', 'rel'],
+                ALLOW_DATA_ATTR: false,
+              }),
+            }}
           />
         </div>
       ) : (
@@ -721,9 +740,9 @@ export function ApprovalGate() {
                   <span className="text-text-primary font-medium">{metrics.cost_saved_display}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-text-secondary">Source</span>
+                  <span className="text-text-secondary">Rules used</span>
                   <span className="text-text-primary font-medium">
-                    {metrics.brand_rules_used ? 'Custom brand rules' : 'Default rules'}
+                    {metrics.rules_source_label || (metrics.brand_rules_used ? 'Custom brand rules' : 'Default rules')}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -732,6 +751,14 @@ export function ApprovalGate() {
                     {metrics.trend_sources_used > 0 ? 'Grounded' : 'No live data'}
                   </span>
                 </div>
+                {metrics.estimated_llm_cost_usd !== undefined && (
+                  <div className="flex justify-between">
+                    <span className="text-text-secondary">LLM cost</span>
+                    <span className="text-text-primary font-medium">
+                      ~${metrics.estimated_llm_cost_usd.toFixed(3)} USD
+                    </span>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-2">
@@ -741,6 +768,15 @@ export function ApprovalGate() {
               </div>
             )}
           </div>
+
+          {metrics && metrics.compliance_iterations > 1 && (
+            <div className="bg-warning/5 border border-warning/20 rounded-md p-3 mt-2">
+              <p className="text-xs text-text-secondary">
+                Compliance auto-corrected <strong>{metrics.compliance_iterations} time{metrics.compliance_iterations > 1 ? 's' : ''}</strong> before passing.
+                <br />This draft was autonomously revised without human intervention.
+              </p>
+            </div>
+          )}
 
           {/* Compliance Summary */}
           <div className="bg-bg-surface border border-border-default rounded-[--radius-md] p-4">
@@ -891,6 +927,14 @@ export function ApprovalGate() {
                 <span className="text-text-secondary">Trend sources</span>
                 <span className="text-text-primary font-medium">{metrics?.trend_sources_used ?? 0}</span>
               </div>
+              {slowestAgentTiming && (
+                <div className="flex justify-between">
+                  <span className="text-text-secondary">Slowest agent</span>
+                  <span className="text-text-primary font-medium">
+                    {slowestAgentTiming.agent} ({Math.round(slowestAgentTiming.duration_ms / 1000)}s)
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>

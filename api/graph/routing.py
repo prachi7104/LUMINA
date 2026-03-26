@@ -7,11 +7,15 @@ This module defines conditional routing between pipeline stages based on content
   Passes to localization if compliant, escalates if rejected/max iterations,
   or loops back to draft agent for revisions.
 
-- route_after_intake: Placeholder for future branching based on engagement data.
-  Currently routes all paths to draft_agent for consistency.
+- route_after_intake: Logs engagement pivot readiness after intake.
+    Currently routes all paths to trend_agent for safe single-path execution.
 """
 
+import logging
+
 from api.graph.state import ContentState
+
+logger = logging.getLogger(__name__)
 
 
 def route_after_compliance(state: ContentState) -> str:
@@ -46,14 +50,20 @@ def route_after_intake(state: ContentState) -> str:
     """
     Route after intake agent processing.
 
-    Placeholder for future branching logic based on engagement data.
-    Currently routes all paths to draft_agent.
+    Route after intake agent.
+
+    Engagement pivots are computed at intake and persisted in state.
+    We keep execution on a single path for now (trend_agent), while
+    preserving visibility in graph routing and logs for future branching.
 
     Returns:
-        - "draft_agent" for all paths
+        - "trend_agent" for all paths
     """
-    # Engagement data check for future implementation
-    if state["engagement_data"] is not None and len(state["engagement_data"]) > 0:
-        pass  # Future: different handling based on engagement levels
+    engagement_strategy = state.get("engagement_strategy", {}) or {}
+    if engagement_strategy.get("pivot_recommended"):
+        logger.info(
+            "Engagement pivot detected: %s",
+            engagement_strategy.get("pivot_reason", ""),
+        )
 
-    return "draft_agent"
+    return "trend_agent"

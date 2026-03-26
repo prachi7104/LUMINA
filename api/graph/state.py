@@ -26,6 +26,7 @@ class ContentState(TypedDict):
       - compliance_feedback: List of compliance issues [{sentence, rule_id, message, suggested_fix}]
       - compliance_history: Iteration-wise memory of compliance outcomes for revision guidance
       - compliance_iterations: Count of compliance revision attempts
+      - corrections_applied_this_run: Number of correction patterns applied in this run
       - org_rules_count: Number of organization rules used during compliance checks
       - rules_source: Which rules were used ('org_rules' or 'default')
       - localized_hi: Hindi-adapted content from localization agent
@@ -68,6 +69,7 @@ class ContentState(TypedDict):
     compliance_feedback: list[dict]
     compliance_history: list[dict]
     compliance_iterations: int
+    corrections_applied_this_run: int
     org_rules_count: int
     rules_source: str
     localized_hi: str

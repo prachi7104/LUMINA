@@ -7,6 +7,7 @@ import time
 
 from api.graph.state import ContentState
 from api.llm import call_llm
+from api.llm_router import log_routing_decision, route_model
 
 
 def _normalize_financial_terms(text: str) -> str:
@@ -83,7 +84,15 @@ Return ONLY the Hindi translated content with section markers preserved."""
 
     # Call LLM with timing
     start_time = time.time()
-    model = "llama-3.3-70b-versatile"
+    model = route_model(
+        "localization",
+        content_category=str(state.get("content_category") or "general"),
+    )
+    log_routing_decision(
+        "localization",
+        model,
+        reason=f"category={str(state.get('content_category') or 'general')}",
+    )
 
     localized_hi = call_llm(
         model=model,

@@ -416,6 +416,20 @@ export function Dashboard() {
 
           {/* RIGHT COLUMN 30%: Achievement Cards + Brand Hub */}
           <div className="space-y-6">
+            {summary && summary.avg_cycle_reduction_pct > 0 && (
+              <div className="bg-accent-primary/10 border border-accent-primary/30 rounded-lg p-6">
+                <div className="text-4xl font-bold text-accent-primary">
+                  {summary.avg_cycle_reduction_pct}%
+                </div>
+                <div className="text-text-secondary text-sm mt-1">
+                  Average content cycle time reduction vs. 8-hour manual baseline
+                </div>
+                <div className="text-xs text-text-tertiary mt-2">
+                  Research (1.5h) + Drafting (2h) + Compliance (1.5h) + Social adaptation (1h) + Localization (1.5h) + Editorial review (0.5h)
+                </div>
+              </div>
+            )}
+
             {/* Achievement Cards */}
             {summary && !loadError && (
               <section>
