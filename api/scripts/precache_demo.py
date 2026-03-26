@@ -1,5 +1,17 @@
+"""
+Pre-cache all three hackathon scenario packs before demo day.
+Run this 2 hours before judging. Verifies pipeline works end-to-end and
+caches trend data so demos run fast.
+
+Usage:
+    cd api && python scripts/precache_demo.py --base-url https://your-render-url.onrender.com
+"""
+
+from __future__ import annotations
+
+import argparse
 import json
-import os
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -7,154 +19,300 @@ from typing import Any
 
 import requests
 
-BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
-DEMO_SESSION_ID = "demo-session-hackathon-2026"
 ROOT_DIR = Path(__file__).resolve().parents[2]
-PDF_PATH = ROOT_DIR / "api" / "tests" / "fixtures" / "ET_Mock_Brand_Guide.pdf"
 CACHE_PATH = ROOT_DIR / "api" / "scripts" / "demo_cache.json"
 
-SCENARIOS: list[dict[str, Any]] = [
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--base-url", default="http://localhost:8000")
+    parser.add_argument(
+        "--wait-seconds",
+        type=int,
+        default=150,
+        help="Seconds to wait for each pipeline to complete",
+    )
+    return parser.parse_args()
+
+
+SCENARIO_PACKS: list[dict[str, Any]] = [
     {
-        "name": "Product launch sprint",
+        "name": "Scenario 1: Product Launch Sprint",
         "brief": {
-            "topic": "ET Money App Launch",
-            "description": "ET Money launches an AI-powered mutual fund app with zero-commission SIP. Target: retail investors 25-40.",
-            "session_id": DEMO_SESSION_ID,
+            "topic": "Lumina Large Cap Fund Launch",
+            "description": (
+                "Lumina Asset Management is launching its flagship large-cap equity fund: "
+                "Lumina Large Cap Growth Fund. Fund objective: long-term capital appreciation "
+                "through diversified investments in top 100 NSE-listed companies. "
+                "NAV at launch: Rs10. Minimum SIP: Rs500/month. SEBI-registered fund. "
+                "Target investors: retail investors aged 25-45, first-time mutual fund investors."
+            ),
             "content_category": "mutual_fund",
+            "output_options": ["blog", "faq", "twitter", "linkedin", "whatsapp"],
+            "tone": "authoritative",
+            "target_languages": ["en", "hi"],
+        },
+        "engagement_data": None,
+        "expected": {
+            "has_blog": True,
+            "has_faq": True,
+            "has_twitter": True,
+            "has_hindi": True,
+            "compliance_pass": True,
         },
     },
     {
-        "name": "Compliance violation",
+        "name": "Scenario 2: Compliance Rejection",
         "brief": {
-            "topic": "High-Yield Investment Opportunity",
-            "description": "New scheme offers guaranteed 18% annual returns with zero risk of principal loss.",
-            "session_id": DEMO_SESSION_ID,
-            "content_category": "mutual_fund",
+            "topic": "SafeWealth fixed return investment scheme",
+            "description": (
+                "SafeWealth Financial Services offers a revolutionary investment product: "
+                "100% guaranteed 16% annual returns, completely risk-free investment. "
+                "Your principal is assured, with money-back guarantee. "
+                "Beat your bank FD with our sure-profit investment scheme. "
+                "Join 50,000 investors who are already earning certain gains."
+            ),
+            "content_category": "fintech",
+            "output_options": ["blog", "linkedin"],
+            "tone": "accessible",
+            "target_languages": ["en"],
+        },
+        "engagement_data": None,
+        "expected": {
+            "compliance_violations": True,
+            "rules_triggered": ["SEBI01", "SEBI02", "ASCI01"],
+            "requires_revision": True,
         },
     },
     {
-        "name": "Performance pivot with engagement data",
+        "name": "Scenario 3: Performance Pivot",
         "brief": {
-            "topic": "Content Strategy Review",
-            "description": "Monthly content planning brief for ET Markets audience.",
-            "session_id": DEMO_SESSION_ID,
-            "content_category": "general",
+            "topic": "SIP investing for millennials",
+            "description": (
+                "Educational content about systematic investment plans targeted at millennials. "
+                "Explain how SIP works, compounding benefits, and how to start with Rs500/month."
+            ),
+            "content_category": "mutual_fund",
+            "output_options": ["blog", "linkedin", "twitter", "whatsapp"],
+            "tone": "accessible",
+            "target_languages": ["en", "hi"],
         },
         "engagement_data": {
             "video": {"avg_views": 4200, "engagement_rate": 0.082},
             "text_article": {"avg_views": 980, "engagement_rate": 0.019},
+            "short_form": {"avg_views": 2100, "engagement_rate": 0.055},
+        },
+        "expected": {
+            "pivot_recommended": True,
+            "content_calendar_generated": True,
+            "performance_ratio_gt_2": True,
         },
     },
 ]
 
 
-def upload_brand_guide() -> int:
-    if not PDF_PATH.exists():
-        raise FileNotFoundError(f"Brand guide PDF not found at: {PDF_PATH}")
+def wait_for_pipeline(base_url: str, run_id: str, max_wait: int = 150) -> dict[str, Any]:
+    """Poll status until pipeline completes or times out."""
+    print(f"  Waiting for run {run_id}...", end="", flush=True)
+    start = time.time()
 
-    with PDF_PATH.open("rb") as f:
-        response = requests.post(
-            f"{BASE_URL}/api/upload-guide",
-            files={"file": ("ET_Mock_Brand_Guide.pdf", f, "application/pdf")},
-            data={"session_id": DEMO_SESSION_ID},
-            timeout=60,
-        )
+    while time.time() - start < max_wait:
+        time.sleep(5)
+        print(".", end="", flush=True)
 
-    response.raise_for_status()
-    payload = response.json()
-    rules_extracted = int(payload.get("rules_extracted", 0))
-    print(f"Brand guide uploaded: {rules_extracted} rules extracted")
-    return rules_extracted
+        try:
+            resp = requests.get(f"{base_url}/api/pipeline/{run_id}/status", timeout=10)
+            if resp.status_code == 200:
+                status_payload = resp.json()
+                status = str(status_payload.get("status") or "").strip().lower()
+                if status in ("completed", "awaiting_approval", "escalated", "failed"):
+                    print(f" {status}")
+                    return status_payload
+        except Exception:
+            # Continue polling on transient network errors.
+            pass
 
-
-def start_scenario(index: int, scenario: dict[str, Any]) -> str:
-    body: dict[str, Any] = {"brief": scenario["brief"]}
-    if "engagement_data" in scenario:
-        body["engagement_data"] = scenario["engagement_data"]
-
-    response = requests.post(f"{BASE_URL}/api/pipeline/run", json=body, timeout=30)
-    response.raise_for_status()
-    run_id = str(response.json()["run_id"])
-    print(f"Scenario {index} started: run_id = {run_id}")
-    return run_id
+    print(" TIMEOUT")
+    return {"status": "timeout"}
 
 
-def extract_status(payload: Any) -> str:
-    if not isinstance(payload, dict):
-        return "unknown"
-
-    for key in ("status", "pipeline_status", "run_status"):
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return value
-
-    nested = payload.get("run")
-    if isinstance(nested, dict):
-        for key in ("status", "pipeline_status"):
-            value = nested.get(key)
-            if isinstance(value, str) and value.strip():
-                return value
-
-    return "unknown"
+def _extract_output_by_channel(outputs: list[dict[str, Any]], channel: str) -> dict[str, Any] | None:
+    return next((item for item in outputs if str(item.get("channel")) == channel), None)
 
 
-def wait_for_completion(run_id: str) -> str:
-    while True:
-        response = requests.get(f"{BASE_URL}/api/pipeline/{run_id}/status", timeout=30)
+def verify_scenario_outputs(base_url: str, run_id: str, expected: dict[str, Any]) -> list[str]:
+    """Verify scenario produced expected outputs. Returns list of failures."""
+    failures: list[str] = []
 
-        if response.status_code == 404:
-            raise RuntimeError(
-                "Status endpoint returned 404. Ensure /api/pipeline/{id}/status exists before precaching."
-            )
+    try:
+        outputs_resp = requests.get(f"{base_url}/api/pipeline/{run_id}/outputs", timeout=10)
+        outputs_resp.raise_for_status()
+        outputs = outputs_resp.json().get("outputs", [])
 
-        response.raise_for_status()
-        payload = response.json()
-        status = extract_status(payload)
-        print(f"run_id={run_id} status={status}")
+        if expected.get("has_blog"):
+            blog = _extract_output_by_channel(outputs, "blog")
+            if not blog or not blog.get("content"):
+                failures.append("Missing or empty blog output")
 
-        if status in {"awaiting_approval", "completed"}:
-            return run_id
+        if expected.get("has_faq"):
+            faq = _extract_output_by_channel(outputs, "faq")
+            if not faq or not faq.get("content"):
+                failures.append("Missing or empty FAQ output")
 
-        if status in {"failed", "error", "rejected"}:
-            raise RuntimeError(f"Pipeline run failed for run_id={run_id} with status={status}")
+        if expected.get("has_twitter"):
+            twitter = _extract_output_by_channel(outputs, "twitter")
+            if not twitter or not twitter.get("content"):
+                failures.append("Missing or empty Twitter output")
 
-        time.sleep(3)
+        if expected.get("has_hindi"):
+            hindi = next((item for item in outputs if str(item.get("language")) == "hi"), None)
+            if not hindi or not hindi.get("content"):
+                failures.append("Missing Hindi language output")
+    except Exception as exc:  # noqa: BLE001
+        failures.append(f"Output verification failed: {exc}")
+
+    if expected.get("pivot_recommended") or expected.get("content_calendar_generated"):
+        try:
+            strategy_resp = requests.get(f"{base_url}/api/pipeline/{run_id}/strategy", timeout=10)
+            if strategy_resp.status_code == 200:
+                strategy = strategy_resp.json()
+                if expected.get("pivot_recommended") and not strategy.get("pivot_recommended"):
+                    failures.append("Expected pivot_recommended=True, got False")
+                if expected.get("content_calendar_generated") and not strategy.get("content_calendar"):
+                    failures.append("Expected content_calendar, got None")
+            else:
+                failures.append(f"Strategy endpoint returned {strategy_resp.status_code}")
+        except Exception as exc:  # noqa: BLE001
+            failures.append(f"Strategy check failed: {exc}")
+
+    return failures
 
 
-def save_cache(rules_extracted: int, run_ids: list[str]) -> None:
+def _save_cache(results: list[dict[str, Any]], all_passed: bool, base_url: str) -> None:
     CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    data = {
-        "session_id": DEMO_SESSION_ID,
-        "rules_extracted": rules_extracted,
-        "scenario_1_run_id": run_ids[0],
-        "scenario_2_run_id": run_ids[1],
-        "scenario_3_run_id": run_ids[2],
-        "cached_at": datetime.now().isoformat(),
+    payload = {
+        "cached_at": datetime.utcnow().isoformat() + "Z",
+        "base_url": base_url,
+        "all_passed": all_passed,
+        "scenarios": results,
+        "run_ids": [entry.get("run_id") for entry in results if entry.get("run_id")],
     }
-    CACHE_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    CACHE_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    print(f"\nSaved cache summary: {CACHE_PATH}")
 
 
 def main() -> None:
-    rules_extracted = upload_brand_guide()
+    args = parse_args()
+    base_url = args.base_url.rstrip("/")
 
-    run_ids: list[str] = []
-    for index, scenario in enumerate(SCENARIOS, start=1):
-        run_id = start_scenario(index, scenario)
-        completed_run_id = wait_for_completion(run_id)
-        run_ids.append(completed_run_id)
+    print(f"\n{'=' * 60}")
+    print("NarrativeOps Demo Pre-Cache")
+    print(f"Target: {base_url}")
+    print(f"{'=' * 60}\n")
 
-        if index < len(SCENARIOS):
-            time.sleep(5)
+    # Health check
+    try:
+        health = requests.get(f"{base_url}/health", timeout=5)
+        health.raise_for_status()
+        if health.json().get("status") != "ok":
+            print("Health check failed. Aborting.")
+            sys.exit(1)
+        print("API healthy\n")
+    except Exception as exc:  # noqa: BLE001
+        print(f"Cannot reach API: {exc}")
+        sys.exit(1)
 
-    save_cache(rules_extracted, run_ids)
+    all_passed = True
+    results: list[dict[str, Any]] = []
 
-    id1, id2, id3 = run_ids
-    print(
-        "All scenarios cached. Copy these run_ids to your demo notes:\n"
-        f" Scenario 1 (product launch):  {id1}\n"
-        f" Scenario 2 (compliance):      {id2}\n"
-        f" Scenario 3 (pivot):           {id3}"
-    )
+    for index, scenario in enumerate(SCENARIO_PACKS, 1):
+        print(f"\n[{index}/{len(SCENARIO_PACKS)}] {scenario['name']}")
+        print("-" * 50)
+
+        payload = {
+            "brief": scenario["brief"],
+            "engagement_data": scenario["engagement_data"],
+        }
+
+        try:
+            start_resp = requests.post(f"{base_url}/api/pipeline/run", json=payload, timeout=15)
+            if start_resp.status_code != 200:
+                print(f"  Failed to start: {start_resp.status_code}")
+                all_passed = False
+                results.append(
+                    {
+                        "name": scenario["name"],
+                        "run_id": None,
+                        "status": "start_failed",
+                        "failures": [f"HTTP {start_resp.status_code}"],
+                    }
+                )
+                continue
+
+            run_id = str(start_resp.json().get("run_id") or "")
+            print(f"  Started: run_id={run_id}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  Exception starting pipeline: {exc}")
+            all_passed = False
+            results.append(
+                {
+                    "name": scenario["name"],
+                    "run_id": None,
+                    "status": "start_exception",
+                    "failures": [str(exc)],
+                }
+            )
+            continue
+
+        final_status = wait_for_pipeline(base_url, run_id, args.wait_seconds)
+        status = str(final_status.get("status") or "unknown")
+
+        if status in ("failed", "timeout"):
+            print(f"  Pipeline {status}")
+            all_passed = False
+            results.append(
+                {
+                    "name": scenario["name"],
+                    "run_id": run_id,
+                    "status": status,
+                    "failures": [f"pipeline {status}"],
+                }
+            )
+            continue
+
+        print(f"  Status: {status}")
+
+        failures = verify_scenario_outputs(base_url, run_id, scenario["expected"])
+        if failures:
+            print("  Verification failures:")
+            for failure in failures:
+                print(f"     - {failure}")
+            all_passed = False
+        else:
+            print("  All expected outputs verified")
+
+        results.append(
+            {
+                "name": scenario["name"],
+                "run_id": run_id,
+                "status": status,
+                "failures": failures,
+            }
+        )
+
+        print(f"  Demo run_id: {run_id}")
+        time.sleep(10)
+
+    _save_cache(results, all_passed, base_url)
+
+    print(f"\n{'=' * 60}")
+    if all_passed:
+        print("ALL SCENARIOS PASSED - Ready for demo")
+    else:
+        print("SOME SCENARIOS FAILED - Do not demo until resolved")
+    print(f"{'=' * 60}\n")
+
+    sys.exit(0 if all_passed else 1)
 
 
 if __name__ == "__main__":
