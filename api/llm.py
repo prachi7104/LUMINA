@@ -12,6 +12,30 @@ from api.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _is_retryable_groq_error(exc: Exception) -> bool:
+    """Return True for Groq errors where retry/fallback should be attempted."""
+    if isinstance(exc, RateLimitError):
+        return True
+
+    if isinstance(exc, APIStatusError):
+        if exc.status_code == 429:
+            return True
+
+        if exc.status_code == 400:
+            body = getattr(exc, "body", None)
+            if isinstance(body, dict):
+                error_obj = body.get("error", {}) if isinstance(body.get("error"), dict) else {}
+                code = str(error_obj.get("code") or "").strip().lower()
+                if code == "json_validate_failed":
+                    return True
+
+            text = str(exc).lower()
+            if "json_validate_failed" in text or "failed to generate json" in text:
+                return True
+
+    return False
+
+
 def call_llm(
     model: str,
     system: str,
@@ -86,12 +110,15 @@ def call_llm(
             return content
 
         except (RateLimitError, APIStatusError) as e:
-            if isinstance(e, APIStatusError) and e.status_code != 429:
-                raise  # Re-raise non-429 status errors
+            if not _is_retryable_groq_error(e):
+                raise
 
             logger.info(
-                f"Groq rate limit hit on attempt {attempt}/3 for {model}. "
-                f"Retrying in {delay}s..."
+                "Groq transient error on attempt %s/3 for %s. Retrying in %ss... Error: %s",
+                attempt,
+                model,
+                delay,
+                e,
             )
             if attempt < 3:
                 time.sleep(delay)
