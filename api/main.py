@@ -302,6 +302,7 @@ def _run_pipeline_thread(run_id: str, brief: dict, engagement_data: dict | None)
         final_audit_log = final_values.get("audit_log", [])
 
         if cancelled_by_user:
+            database.update_run_status(run_id, "cancelled")
             _emit_sse(
                 run_id,
                 {
@@ -311,6 +312,9 @@ def _run_pipeline_thread(run_id: str, brief: dict, engagement_data: dict | None)
                 },
             )
         elif latest_pipeline_status == "awaiting_approval":
+            database.update_run_status(run_id, "awaiting_approval")
+            if isinstance(final_audit_log, list) and final_audit_log:
+                database.write_audit_log(run_id, final_audit_log)
             _emit_sse(
                 run_id,
                 {
@@ -331,6 +335,9 @@ def _run_pipeline_thread(run_id: str, brief: dict, engagement_data: dict | None)
                 },
             )
         else:
+            database.update_run_status(run_id, "completed")
+            if isinstance(final_audit_log, list) and final_audit_log:
+                database.write_audit_log(run_id, final_audit_log)
             _emit_sse(
                 run_id,
                 {
@@ -384,6 +391,8 @@ def _resume_pipeline_sync(run_id: str) -> None:
                 "data": update,
             },
         )
+
+    database.update_run_status(run_id, "completed")
 
     _emit_sse(
         run_id,
