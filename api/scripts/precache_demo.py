@@ -13,7 +13,7 @@ import argparse
 import json
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -111,29 +111,79 @@ SCENARIO_PACKS: list[dict[str, Any]] = [
 ]
 
 
-def wait_for_pipeline(base_url: str, run_id: str, max_wait: int = 150) -> dict[str, Any]:
-    """Poll status until pipeline completes or times out."""
-    print(f"  Waiting for run {run_id}...", end="", flush=True)
-    start = time.time()
+def _wait_via_stream(base_url: str, run_id: str, max_wait: int) -> dict[str, Any] | None:
+    """Wait for terminal state using SSE stream events."""
+    stream_url = f"{base_url}/api/pipeline/{run_id}/stream"
+    deadline = time.time() + max_wait
 
+    try:
+        with requests.get(stream_url, stream=True, timeout=(10, max_wait)) as resp:
+            if resp.status_code != 200:
+                return None
+
+            for raw in resp.iter_lines(decode_unicode=True):
+                if time.time() > deadline:
+                    return {"status": "timeout"}
+                if not raw or not raw.startswith("data:"):
+                    continue
+
+                payload_text = raw[5:].strip()
+                try:
+                    payload = json.loads(payload_text)
+                except json.JSONDecodeError:
+                    continue
+
+                event_type = str(payload.get("type") or "")
+                if event_type == "human_required":
+                    return {"status": "awaiting_approval", "event": payload}
+                if event_type == "pipeline_complete":
+                    return {"status": "completed", "event": payload}
+                if event_type == "error":
+                    message = str(payload.get("message") or "error")
+                    lowered = message.lower()
+                    if "escalat" in lowered:
+                        return {"status": "escalated", "event": payload}
+                    return {"status": "failed", "event": payload}
+    except Exception:
+        return None
+
+    return None
+
+
+def _wait_via_status(base_url: str, run_id: str, max_wait: int) -> dict[str, Any]:
+    """Fallback polling of status endpoint until terminal state."""
+    start = time.time()
     while time.time() - start < max_wait:
         time.sleep(5)
         print(".", end="", flush=True)
-
         try:
             resp = requests.get(f"{base_url}/api/pipeline/{run_id}/status", timeout=10)
             if resp.status_code == 200:
-                status_payload = resp.json()
-                status = str(status_payload.get("status") or "").strip().lower()
+                payload = resp.json()
+                status = str(payload.get("status") or "").strip().lower()
                 if status in ("completed", "awaiting_approval", "escalated", "failed"):
-                    print(f" {status}")
-                    return status_payload
+                    return payload
         except Exception:
-            # Continue polling on transient network errors.
             pass
 
-    print(" TIMEOUT")
     return {"status": "timeout"}
+
+
+def wait_for_pipeline(base_url: str, run_id: str, max_wait: int = 150) -> dict[str, Any]:
+    """Wait for completion using SSE first, with status polling fallback."""
+    print(f"  Waiting for run {run_id}...", end="", flush=True)
+    stream_result = _wait_via_stream(base_url, run_id, max_wait)
+    if stream_result and stream_result.get("status") != "timeout":
+        print(f" {stream_result.get('status')}")
+        return stream_result
+
+    status_result = _wait_via_status(base_url, run_id, max_wait)
+    status = str(status_result.get("status") or "timeout")
+    if status == "timeout":
+        print(" TIMEOUT")
+    else:
+        print(f" {status}")
+    return status_result
 
 
 def _extract_output_by_channel(outputs: list[dict[str, Any]], channel: str) -> dict[str, Any] | None:
@@ -191,7 +241,7 @@ def verify_scenario_outputs(base_url: str, run_id: str, expected: dict[str, Any]
 def _save_cache(results: list[dict[str, Any]], all_passed: bool, base_url: str) -> None:
     CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "cached_at": datetime.utcnow().isoformat() + "Z",
+        "cached_at": datetime.now(timezone.utc).isoformat(),
         "base_url": base_url,
         "all_passed": all_passed,
         "scenarios": results,
@@ -270,12 +320,19 @@ def main() -> None:
         if status in ("failed", "timeout"):
             print(f"  Pipeline {status}")
             all_passed = False
+            event = final_status.get("event") if isinstance(final_status, dict) else None
+            event_message = ""
+            if isinstance(event, dict):
+                event_message = str(event.get("message") or "").strip()
+            failure_reason = f"pipeline {status}"
+            if event_message:
+                failure_reason = f"{failure_reason}: {event_message}"
             results.append(
                 {
                     "name": scenario["name"],
                     "run_id": run_id,
                     "status": status,
-                    "failures": [f"pipeline {status}"],
+                    "failures": [failure_reason],
                 }
             )
             continue
