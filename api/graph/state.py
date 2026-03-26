@@ -15,6 +15,7 @@ class ContentState(TypedDict):
 
     Phase Outputs:
       - strategy: Output from intake agent (content strategy)
+      - compliance_flags: Risk areas identified at intake to prioritize compliance checks
       - trend_context: Trend summary bullets generated from current market context
       - trend_sources: Source URLs used to build trend context
       - trend_cache_hit: Whether trend context came from cache
@@ -22,6 +23,7 @@ class ContentState(TypedDict):
       - draft_version: Iteration counter for compliance loops (max 3)
       - compliance_verdict: Empty string until compliance check runs
       - compliance_feedback: List of compliance issues [{sentence, rule_id, message, suggested_fix}]
+      - compliance_history: Iteration-wise memory of compliance outcomes for revision guidance
       - compliance_iterations: Count of compliance revision attempts
       - org_rules_count: Number of organization rules used during compliance checks
       - rules_source: Which rules were used ('org_rules' or 'default')
@@ -53,6 +55,7 @@ class ContentState(TypedDict):
     output_options: list[str]
     target_languages: list[str]
     strategy: dict
+    compliance_flags: list[str]
     trend_context: str
     trend_sources: list[str]
     trend_cache_hit: bool
@@ -61,6 +64,7 @@ class ContentState(TypedDict):
     draft_version: int
     compliance_verdict: str
     compliance_feedback: list[dict]
+    compliance_history: list[dict]
     compliance_iterations: int
     org_rules_count: int
     rules_source: str

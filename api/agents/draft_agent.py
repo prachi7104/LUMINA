@@ -12,11 +12,6 @@ from api.llm import call_llm
 
 logger = logging.getLogger(__name__)
 
-MANDATORY_DISCLAIMER = (
-    "Investments are subject to market risk. "
-    "Please read all scheme-related documents carefully before investing."
-)
-
 
 def _get_output_format(state: ContentState) -> str:
     selected = str(state.get("output_format") or "").strip()
@@ -49,28 +44,6 @@ def _get_format_guidelines(output_format: str) -> str:
         "- Create a robust base article that can be adapted to social channels\\n"
         "- Keep sections clear and reusable"
     )
-
-
-def inject_mandatory_disclaimer(draft: str) -> str:
-    """Ensure mandatory investment disclaimer is present in the draft."""
-    draft_text = draft or ""
-
-    # Case-insensitive presence check across whole draft.
-    if "investments are subject to market risk" in draft_text.lower():
-        return draft_text
-
-    marker = "##CONCLUSION"
-    if marker in draft_text:
-        before, after = draft_text.split(marker, 1)
-        after_clean = after.lstrip("\n")
-        if after_clean:
-            return f"{before}{marker}\n{MANDATORY_DISCLAIMER}\n\n{after_clean}"
-        return f"{before}{marker}\n{MANDATORY_DISCLAIMER}"
-
-    trimmed = draft_text.rstrip()
-    if trimmed:
-        return f"{trimmed}\n\n{MANDATORY_DISCLAIMER}"
-    return MANDATORY_DISCLAIMER
 
 
 def run_draft_agent(state: ContentState) -> dict:
@@ -114,6 +87,7 @@ def run_draft_agent(state: ContentState) -> dict:
 
     # Determine if this is a revision or fresh draft
     is_revision = len(compliance_feedback) > 0
+    compliance_history = state.get("compliance_history", [])
 
     model = "llama-3.3-70b-versatile"
 
@@ -141,6 +115,20 @@ Return ONLY the complete revised draft. No explanation."""
             user_prompt += f"   Suggested fix: {feedback_item.get('suggested_fix', '')}\n\n"
 
         user_prompt += "Do not change any other sentence. Return the complete revised draft with ##INTRO, ##BODY, ##CONCLUSION markers."
+
+        if len(compliance_history) > 1:
+            history_lines = [
+                "PREVIOUS COMPLIANCE ATTEMPTS (what you tried that failed):"
+            ]
+            for entry in compliance_history[:-1]:
+                history_lines.append(
+                    "  Attempt "
+                    f"{entry.get('iteration', '?')}: "
+                    f"{entry.get('violations_count', 0)} violations — "
+                    f"{entry.get('summary', '')}"
+                )
+            history_lines.append("Do NOT repeat the same mistakes. These approaches failed.")
+            user_prompt = "\n".join(history_lines) + "\n\n" + user_prompt
 
         if strategy_recommendation:
             user_prompt += f"\n\nStrategy recommendation: {strategy_recommendation}"
@@ -212,8 +200,6 @@ Return ONLY the article text with section markers. No explanation."""
         max_tokens=3000,
         json_mode=False
     )
-
-    draft_content = inject_mandatory_disclaimer(draft_content)
 
     end_time = time.time()
     duration_ms = int((end_time - start_time) * 1000)

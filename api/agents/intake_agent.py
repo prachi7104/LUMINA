@@ -12,6 +12,23 @@ from api.llm import call_llm
 logger = logging.getLogger(__name__)
 
 
+def _detect_content_category(brief: dict) -> str:
+    """Detect content category from brief topic/description keywords."""
+    text = (
+        str(brief.get("description", "")) + " " + str(brief.get("topic", ""))
+    ).lower()
+    if any(word in text for word in ["mutual fund", "sip", "nav", "amc", "nfo"]):
+        return "mutual_fund"
+    if any(word in text for word in ["fintech", "payment", "insurance", "upi", "neft"]):
+        return "fintech"
+    if any(
+        word in text
+        for word in ["stock", "equity", "share", "nse", "bse", "sensex", "nifty"]
+    ):
+        return "equity"
+    return "general"
+
+
 def _derive_best_channel(engagement_data: dict | None, default_channel: str = "blog") -> str:
     if not isinstance(engagement_data, dict) or not engagement_data:
         return default_channel
@@ -159,6 +176,10 @@ Return ONLY the JSON object. No explanation, no markdown, no preamble."""
     else:
         strategy["best_channel"] = llm_best_channel
 
+    detected_category = _detect_content_category(brief)
+    raw_flags = strategy.get("compliance_flags", [])
+    compliance_flags = raw_flags if isinstance(raw_flags, list) else []
+
     # Build audit log entry
     audit_entry = {
         "agent": "intake_agent",
@@ -170,6 +191,8 @@ Return ONLY the JSON object. No explanation, no markdown, no preamble."""
 
     return {
         "strategy": strategy,
+        "content_category": detected_category,
+        "compliance_flags": [str(flag) for flag in compliance_flags if str(flag).strip()],
         "pipeline_status": "intake_complete",
         "audit_log": state.get("audit_log", []) + [audit_entry]
     }

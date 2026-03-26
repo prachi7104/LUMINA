@@ -92,6 +92,9 @@ def run_compliance_agent(state: ContentState) -> dict:
         ]
     )
 
+    compliance_flags = state.get("compliance_flags", [])
+    flag_lines = [f"- {str(flag).strip()}" for flag in compliance_flags if str(flag).strip()]
+
     # System prompt with exact JSON schema
     system_prompt = """You are a compliance checker for Economic Times financial content.
 Review the draft article against the compliance rules below.
@@ -133,6 +136,13 @@ Critical rules:
 4. Annotate EVERY violation you find
 5. Return ONLY the JSON object. No explanation, no markdown."""
 
+    if flag_lines:
+        system_prompt += (
+            "\n\nPRIORITY RISK AREAS (identified during intake analysis):\n"
+            + "\n".join(flag_lines)
+            + "\nPay extra attention to these topics when reviewing the draft."
+        )
+
     # Build user prompt
     user_prompt = f"""RULES:
 {formatted_rules}
@@ -142,13 +152,14 @@ DRAFT:
 
     # Call LLM with timing
     start_time = time.time()
-    model = "llama-3.1-8b-instant"
+    model_primary = "llama-3.3-70b-versatile"
+    model_fallback = "llama-3.1-8b-instant"
 
     raw_response = call_llm(
-        model=model,
+        model=model_primary,
         system=system_prompt,
         user=user_prompt,
-        max_tokens=2000,
+        max_tokens=3000,
         json_mode=True
     )
 
@@ -184,10 +195,17 @@ DRAFT:
                 "suggested_fix": "Regenerate compliance analysis and re-check all high-risk claims.",
             }
         ]
+        history_entry = {
+            "iteration": current_iterations + 1,
+            "verdict": "REVISE",
+            "violations_count": len(parse_feedback),
+            "summary": "Compliance parse failure"[:200],
+        }
         return {
             "compliance_verdict": "REVISE",
             "compliance_feedback": parse_feedback,
             "compliance_iterations": current_iterations + 1,
+            "compliance_history": state.get("compliance_history", []) + [history_entry],
             "org_rules_count": len(combined_rules),
             "rules_source": rules_source,
             "pipeline_status": "compliance_complete",
@@ -196,10 +214,13 @@ DRAFT:
                 {
                     "agent": "compliance_agent",
                     "action": "checked_compliance",
-                    "model": model,
+                    "model": model_primary,
                     "duration_ms": duration_ms,
                     "verdict": "REVISE",
-                    "output_summary": "JSON parse failed — defaulting to REVISE",
+                    "output_summary": (
+                        "JSON parse failed — defaulting to REVISE "
+                        f"(fallback configured: {model_fallback})"
+                    ),
                 }
             ],
         }
@@ -208,12 +229,18 @@ DRAFT:
     verdict = result.get("verdict", "PASS")
     annotations = result.get("annotations", [])
     summary = result.get("summary", "")
+    history_entry = {
+        "iteration": current_iterations + 1,
+        "verdict": verdict,
+        "violations_count": len(annotations),
+        "summary": str(summary)[:200] if summary else "",
+    }
 
     # Build audit log entry
     audit_entry = {
         "agent": "compliance_agent",
         "action": "checked_compliance",
-        "model": model,
+        "model": model_primary,
         "duration_ms": duration_ms,
         "verdict": verdict,
         "violations": len(annotations),
@@ -233,6 +260,7 @@ DRAFT:
         "compliance_verdict": verdict,
         "compliance_feedback": annotations,
         "compliance_iterations": current_iterations + 1,
+        "compliance_history": state.get("compliance_history", []) + [history_entry],
         "org_rules_count": len(combined_rules),
         "rules_source": rules_source,
         "pipeline_status": "compliance_complete",

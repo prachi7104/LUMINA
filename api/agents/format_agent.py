@@ -230,19 +230,43 @@ def _validate_twitter_thread(thread: list[str]) -> list[str]:
     return validated
 
 
-def _build_hindi_whatsapp_variant(localized_hi: str) -> str:
-    """Create a compact WhatsApp-ready Hindi variant from localized article content."""
-    if not localized_hi:
+def _build_hindi_whatsapp_variant(localized_hi: str, draft: str, model: str) -> str:
+    """
+    Generate a proper Hindi WhatsApp message with social register.
+    Falls back to deterministic extraction if the generation call fails.
+    """
+    if not localized_hi and not draft:
         return ""
 
-    text = localized_hi.replace("##INTRO", "").replace("##BODY", "").replace("##CONCLUSION", "")
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    compact = "\n".join(lines[:5]).strip()
+    source = localized_hi if localized_hi else draft
+    system_prompt = """आप एक सोशल मीडिया कंटेंट राइटर हैं।
+नीचे दिए गए आर्टिकल को WhatsApp के लिए एक छोटे, आकर्षक Hindi message में बदलें।
 
-    if len(compact) > 500:
-        compact = compact[:500].rstrip() + "..."
+नियम:
+- 80-100 शब्द में लिखें
+- बोलचाल की भाषा (formal लेकिन conversational)
+- 1-2 relevant emoji का उपयोग करें
+- एक clear call-to-action के साथ समाप्त करें
+- Financial jargon को सरल बनाएं
+- कोई markdown नहीं, plain text only
 
-    return compact
+Return ONLY the WhatsApp message, nothing else."""
+    user_prompt = f"इस content से WhatsApp message बनाएं:\n\n{source[:2000]}"
+
+    try:
+        result = call_llm(
+            model=model,
+            system=system_prompt,
+            user=user_prompt,
+            max_tokens=300,
+            json_mode=False,
+        )
+        return str(result).strip()[:600]
+    except Exception as exc:
+        logger.warning("Hindi WhatsApp variant generation failed: %s", exc)
+        text = localized_hi.replace("##INTRO", "").replace("##BODY", "").replace("##CONCLUSION", "")
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        return "\n".join(lines[:4])[:400]
 
 
 def run_format_agent(state: ContentState) -> dict:
@@ -314,7 +338,11 @@ def run_format_agent(state: ContentState) -> dict:
         else:
             twitter_thread = _validate_twitter_thread([str(raw_thread)])
 
-    whatsapp_hi_message = _build_hindi_whatsapp_variant(str(state.get("localized_hi", "") or ""))
+    whatsapp_hi_message = _build_hindi_whatsapp_variant(
+        str(state.get("localized_hi", "") or ""),
+        draft,
+        model,
+    )
 
     output_payload = {
         "blog_html": blog_html,
