@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { AlertCircle, ArrowRight, FileText, Linkedin, Loader2, MessageCircle, RotateCw, Twitter } from 'lucide-react';
+import { AlertCircle, ArrowRight, FileText, Linkedin, Loader2, MessageCircle, RotateCw, Twitter, Trash2, Clock } from 'lucide-react';
 
 import { getOutputs, listRuns } from '../api/client';
 import type { PipelineOutput, RunSummary } from '../api/types';
@@ -29,12 +29,37 @@ export function Gallery() {
   const navigate = useNavigate();
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [search, setSearch] = useState('');
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [filter, setFilter] = useState<FilterStatus>('all');
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [outputsByRun, setOutputsByRun] = useState<OutputsByRun>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loadingOutputsFor, setLoadingOutputsFor] = useState<string | null>(null);
+  const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
+
+  // Load search history from localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem('gallery_search_history');
+    if (stored) {
+      try {
+        setSearchHistory(JSON.parse(stored));
+      } catch {
+        setSearchHistory([]);
+      }
+    }
+  }, []);
+
+  // Save search history to localStorage (keep only last 4)
+  useEffect(() => {
+    if (search.trim() && search.trim().length > 0) {
+      setSearchHistory(prev => {
+        const updated = [search.trim(), ...prev.filter(s => s !== search.trim())].slice(0, 4);
+        localStorage.setItem('gallery_search_history', JSON.stringify(updated));
+        return updated;
+      });
+    }
+  }, [search]);
 
   const fetchRuns = () => {
     setLoading(true);
@@ -84,6 +109,44 @@ export function Gallery() {
     }
   };
 
+  const handleDeleteRun = async (runId: string) => {
+    if (!window.confirm('Are you sure you want to delete this chat/run? This action cannot be undone.')) {
+      return;
+    }
+
+    setDeletingRunId(runId);
+    try {
+      // Call the API to delete the run
+      const response = await fetch(`/api/runs/${runId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        // Remove from runs list
+        setRuns((prev) => prev.filter((r) => r.id !== runId));
+        // Clean up outputs
+        setOutputsByRun((prev) => {
+          const updated = { ...prev };
+          delete updated[runId];
+          return updated;
+        });
+      } else {
+        console.error('Failed to delete run:', response.statusText);
+        alert('Failed to delete this chat. Please try again.');
+      }
+    } catch (err) {
+      console.error('Error deleting run:', err);
+      alert('Error deleting this chat. Please try again.');
+    } finally {
+      setDeletingRunId(null);
+    }
+  };
+
+  const handleClearSearchHistory = () => {
+    setSearchHistory([]);
+    localStorage.removeItem('gallery_search_history');
+  };
+
   const formatMeta = (run: RunSummary) => {
     const createdAt = new Date(run.created_at);
     const date = Number.isNaN(createdAt.getTime()) ? run.created_at : createdAt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
@@ -118,13 +181,45 @@ export function Gallery() {
 
       <div className="mx-auto max-w-6xl px-4 py-6 md:px-6">
         <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search topic"
-            className="w-full rounded-md border border-border-default bg-bg-surface px-4 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent-primary focus:outline-none"
-          />
+          <div className="relative">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search topic"
+              className="w-full rounded-md border border-border-default bg-bg-surface px-4 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent-primary focus:outline-none"
+            />
+            {/* Search History Dropdown */}
+            {(search === '' || search.length < 1) && searchHistory.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-1 rounded-md border border-border-default bg-bg-surface shadow-lg z-10 overflow-hidden">
+                <div className="px-3 py-2 border-b border-border-default">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-text-tertiary uppercase tracking-wide flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      Recent searches
+                    </p>
+                    <button
+                      onClick={handleClearSearchHistory}
+                      className="text-xs text-accent-primary hover:underline"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  {searchHistory.map((item, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setSearch(item)}
+                      className="w-full text-left px-3 py-2 text-sm text-text-secondary hover:bg-bg-elevated hover:text-text-primary transition-colors"
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <div className="flex gap-2">
             {(['all', 'completed', 'awaiting_approval'] as FilterStatus[]).map((value) => (
               <button
@@ -216,13 +311,23 @@ export function Gallery() {
                     >
                       {isExpanded ? 'Hide' : 'View'}
                     </button>
-                    <button
-                      onClick={() => navigate(run.status === 'awaiting_approval' ? `/approval/${run.id}` : `/audit/${run.id}`)}
-                      className="flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary"
-                    >
-                      Open
-                      <ArrowRight className="h-4 w-4" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => navigate(run.status === 'awaiting_approval' ? `/approval/${run.id}` : `/audit/${run.id}`)}
+                        className="flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary"
+                      >
+                        Open
+                        <ArrowRight className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteRun(run.id)}
+                        disabled={deletingRunId === run.id}
+                        className="p-1.5 text-text-secondary hover:text-warning hover:bg-warning/10 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Delete this chat"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
 
                   {isExpanded && (

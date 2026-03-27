@@ -774,9 +774,38 @@ export function ApprovalGate() {
 
         {/* Right Sidebar */}
         <div className="w-full lg:w-80 space-y-6">
-          {/* Edit Button */}
-          {!editMode && (
-            <div>
+          {/* Action Buttons */}
+          {!editMode && !isEscalated && (
+            <div className="space-y-3">
+              <button
+                onClick={handleEdit}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-accent-primary text-white rounded-md hover:bg-accent-primary/90 transition-colors"
+              >
+                <Edit3 className="w-4 h-4" />
+                Edit content
+              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleApprove}
+                  className="flex-1 px-4 py-2.5 bg-success text-white rounded-md hover:bg-success/90 transition-colors font-medium text-sm"
+                >
+                  ✓ Approve
+                </button>
+                <button
+                  onClick={openRejectDialog}
+                  className="flex-1 px-4 py-2.5 border border-warning text-warning rounded-md hover:bg-warning/10 transition-colors font-medium text-sm"
+                >
+                  ↶ Rewrite
+                </button>
+              </div>
+              <p className="text-xs text-text-tertiary text-center">
+                💡 Or swipe the content area (right to approve, left to rewrite)
+              </p>
+            </div>
+          )}
+
+          {!editMode && isEscalated && (
+            <div className="space-y-3">
               <button
                 onClick={handleEdit}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-accent-primary text-white rounded-md hover:bg-accent-primary/90 transition-colors"

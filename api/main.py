@@ -316,7 +316,13 @@ def _run_pipeline_thread(run_id: str, brief: dict, engagement_data: dict | None)
         final_audit_log = final_values.get("audit_log", [])
 
         persisted_status = _status_from_database(run_id)
-        if persisted_status in {"awaiting_approval", "escalated", "failed", "cancelled", "completed"}:
+        if persisted_status in {
+            "awaiting_approval",
+            "escalated",
+            "failed",
+            "cancelled",
+            "completed",
+        }:
             latest_pipeline_status = persisted_status
 
         if cancelled_by_user or latest_pipeline_status == "cancelled":
@@ -347,9 +353,9 @@ def _run_pipeline_thread(run_id: str, brief: dict, engagement_data: dict | None)
             _emit_sse(
                 run_id,
                 {
-                    "type": "error",
+                    "type": "human_required",
                     "run_id": run_id,
-                    "message": "Pipeline escalated for manual review before formatting outputs.",
+                    "status": "escalated",
                 },
             )
         elif latest_pipeline_status == "failed":
@@ -460,7 +466,11 @@ async def upload_brand_guide(
             database.save_brand_knowledge(session_id, triples)
             knowledge_triples_count = len(triples)
     except Exception as exc:
-        logger.warning("Knowledge graph extraction failed (non-fatal) for session_id=%s: %s", session_id, exc)
+        logger.warning(
+            "Knowledge graph extraction failed (non-fatal) for session_id=%s: %s",
+            session_id,
+            exc,
+        )
 
     return {
         "session_id": session_id,
@@ -600,6 +610,20 @@ async def approve_pipeline(run_id: str, request: ApproveRequest) -> dict:
     return {"status": "rejected"}
 
 
+@app.delete("/api/runs/{run_id}")
+async def delete_run(run_id: str) -> dict:
+    """Delete a run and all associated data."""
+    try:
+        database.delete_run(run_id)
+        return {"status": "deleted", "run_id": run_id}
+    except Exception as exc:
+        logger.exception("Failed to delete run %s: %s", run_id, exc)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete run"
+        ) from exc
+
+
 @app.get("/api/pipeline/{run_id}/strategy")
 async def get_pipeline_strategy(run_id: str) -> dict:
     """Return engagement strategy and content calendar for a run."""
@@ -681,7 +705,9 @@ async def patch_pipeline_output(run_id: str, request: PatchOutputRequest) -> dic
                     "run_id": run_id,
                     "agent_name": "user_edit",
                     "action": "manual_edit",
-                    "output_summary": f"User manually edited {request.channel}/{request.language} output",
+                    "output_summary": (
+                        f"User manually edited {request.channel}/{request.language} output"
+                    ),
                 }
             ).execute()
     except Exception as exc:
@@ -747,7 +773,11 @@ async def capture_pipeline_diff(run_id: str, request: DiffRequest) -> dict:
                         }
                         database.save_brand_knowledge(session_id, [triple])
         except Exception as exc:
-            logger.warning("Failed to store correction as brand knowledge for run_id=%s: %s", run_id, exc)
+            logger.warning(
+                "Failed to store correction as brand knowledge for run_id=%s: %s",
+                run_id,
+                exc,
+            )
 
         client = database.get_supabase_client()
         corrections_count = 0
@@ -771,7 +801,9 @@ async def capture_pipeline_diff(run_id: str, request: DiffRequest) -> dict:
             status_rows = status_response.data or []
             current_status = str(status_rows[0].get("status", "")) if status_rows else ""
             if current_status != "completed":
-                client.table("pipeline_runs").update({"status": "completed"}).eq("id", run_id).execute()
+                client.table("pipeline_runs").update(
+                    {"status": "completed"}
+                ).eq("id", run_id).execute()
 
             count_response = (
                 client.table("editorial_corrections")
@@ -885,9 +917,16 @@ async def get_dashboard_summary() -> dict:
         metric_rows = metrics_rows_response.data or []
 
         sum_hours = sum(float(row.get("estimated_hours_saved") or 0) for row in metric_rows)
-        sum_cost = sum(float(row.get("estimated_cost_saved_inr") or 0) for row in metric_rows)
-        sum_corrections = sum(int(row.get("corrections_applied") or 0) for row in metric_rows)
-        completed_runs = [row for row in metric_rows if float(row.get("estimated_hours_saved") or 0) > 0]
+        sum_cost = sum(
+            float(row.get("estimated_cost_saved_inr") or 0) for row in metric_rows
+        )
+        sum_corrections = sum(
+            int(row.get("corrections_applied") or 0) for row in metric_rows
+        )
+        completed_runs = [
+            row for row in metric_rows
+            if float(row.get("estimated_hours_saved") or 0) > 0
+        ]
         if completed_runs:
             avg_hours_saved = sum_hours / len(completed_runs)
             avg_cycle_reduction_pct = round((avg_hours_saved / 8.0) * 100, 1)
@@ -899,7 +938,10 @@ async def get_dashboard_summary() -> dict:
             .select("id", count="exact")
             .execute()
         )
-        total_runs = int(getattr(total_runs_response, "count", None) or len(total_runs_response.data or []))
+        total_runs = int(
+            getattr(total_runs_response, "count", None)
+            or len(total_runs_response.data or [])
+        )
 
         formatted_recent_runs = []
         for run in recent_runs:

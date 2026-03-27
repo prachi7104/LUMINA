@@ -123,19 +123,17 @@ def run_draft_agent(state: ContentState) -> dict:
             lines.extend(f"  - {str(item.get('value', ''))}" for item in patterns[:3])
         brand_kg_context = "\n".join(lines)
 
+    compliance_iter = int(state.get("compliance_iterations", 0) or 0)
     model = route_model(
         "draft",
         content_category=content_category,
         draft_length=len(current_draft.split()) if is_revision else 0,
-        compliance_iteration=int(state.get("compliance_iterations", 0) or 0),
+        compliance_iteration=compliance_iter,
     )
     log_routing_decision(
         "draft",
         model,
-        reason=(
-            f"category={content_category} iteration={int(state.get('compliance_iterations', 0) or 0)} "
-            f"is_revision={is_revision}"
-        ),
+        reason=f"category={content_category} iteration={compliance_iter} is_revision={is_revision}",
     )
 
     if is_revision:
@@ -170,7 +168,10 @@ Return ONLY the complete revised draft. No explanation."""
             user_prompt += f"   Issue: {feedback_item.get('message', '')}\n"
             user_prompt += f"   Suggested fix: {feedback_item.get('suggested_fix', '')}\n\n"
 
-        user_prompt += "Do not change any other sentence. Return the complete revised draft with ##INTRO, ##BODY, ##CONCLUSION markers."
+        user_prompt += (
+            "Do not change any other sentence. "
+            "Return the complete revised draft with ##INTRO, ##BODY, ##CONCLUSION markers."
+        )
 
         if len(compliance_history) > 1:
             history_lines = [
@@ -220,12 +221,12 @@ Return ONLY the complete revised draft. No explanation."""
         action = "revised"
     else:
         # FRESH DRAFT MODE
-        system_prompt = f"""You are a content writer for Economic Times (ET).
-Write an article based on the content strategy.
+        system_prompt = f"""You are a senior content writer for Economic Times (ET).
+Write a comprehensive, detailed article based on the content strategy.
 
 Format: {strategy.get('format', 'article')}
 Tone: {strategy.get('tone', 'authoritative')}
-Word count: {strategy.get('word_count', 600)} words
+Word count: {strategy.get('word_count', 600)} words (aim for rich, detailed content at this length)
 Key messages: {', '.join(strategy.get('key_messages', []))}
     {format_guidelines}
 
@@ -234,12 +235,35 @@ CRITICAL: The output MUST contain these exact section markers:
 ##BODY
 ##CONCLUSION
 
-Guidelines:
-- Write for ET readers (educated, financially aware audience)
-- Tone matches the strategy ({strategy.get('tone', 'authoritative')})
-- No sensationalist language
+Article Quality Standards:
+- Write for educated, financially-aware ET readers with sophisticated taste
+- Use specific data points, statistics, and examples (not generic statements)
+- Include expert perspectives or multiple viewpoints where relevant
+- Provide actionable insights readers can apply
+- Cite sources or reference data when making claims
+- Use subheadings within ##BODY to organize complex topics
+- Maintain authoritative, crisp tone without sensationalism
+- Show expertise through nuanced analysis, not surface-level observations
+
+Content Structure Requirements:
+1. ##INTRO: Hook readers with a compelling insight. Introduce the core issue/opportunity.
+2. ##BODY:
+   - Expand on key messages with depth and context
+   - Include 2-3 subheadings for complex topics
+   - Use practical examples, case studies, or real-world scenarios
+   - Present both opportunities and challenges
+   - Reference relevant market trends, regulations, or expert insights
+3. ##CONCLUSION: Summarize key takeaways. Provide forward-looking perspective.
+
+Writing Guidelines:
+- No vague terms like "experts say" without specificity
+- Replace generic statements with concrete analysis
+- Use transitional phrases to connect paragraphs smoothly
+- Break long paragraphs into digestible chunks (2-3 sentences max)
+- Vary sentence structure for readability
 - No unverified return percentage claims
-- If writing about investments: Include "Investments are subject to market risk" disclaimer naturally in conclusion
+- If writing about investments: Include "Investments are subject to market risk"
+  disclaimer naturally in conclusion
 
 Return ONLY the article text with section markers. No explanation."""
 
@@ -263,7 +287,9 @@ Return ONLY the article text with section markers. No explanation."""
                 user_prompt += f"{i}. {feedback}\n"
             user_prompt += "\n"
 
-        user_prompt += f"Write a {strategy.get('word_count', 600)}-word {strategy.get('format', 'article')} article."
+        word_count = strategy.get('word_count', 600)
+        format_type = strategy.get('format', 'article')
+        user_prompt += f"Write a {word_count}-word {format_type} article."
 
         if strategy_recommendation:
             user_prompt += f"\n\nStrategy recommendation: {strategy_recommendation}"
@@ -318,7 +344,11 @@ Return ONLY the article text with section markers. No explanation."""
         "duration_ms": duration_ms,
         "corrections_applied": len(recent_corrections),
         "content_category": content_category,
-        "output_summary": f"version={new_version}, word_count~{len(draft_content.split())}, is_revision={is_revision}"
+        "output_summary": (
+            f"version={new_version}, "
+            f"word_count~{len(draft_content.split())}, "
+            f"is_revision={is_revision}"
+        )
     }
 
     return {

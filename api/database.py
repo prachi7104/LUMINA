@@ -98,6 +98,24 @@ def update_run_status(run_id: str, status: str) -> None:
     return None
 
 
+def delete_run(run_id: str) -> None:
+    """Delete a run and all associated data (outputs, audit logs, events)."""
+    client = get_supabase_client()
+    if client is None:
+        return None
+
+    try:
+        # Delete in correct order to avoid foreign key issues
+        client.table("agent_events").delete().eq("run_id", run_id).execute()
+        client.table("pipeline_outputs").delete().eq("run_id", run_id).execute()
+        client.table("content_feedback").delete().eq("run_id", run_id).execute()
+        client.table("pipeline_runs").delete().eq("id", run_id).execute()
+        logger.info("Deleted run %s and all associated data", run_id)
+    except Exception as exc:
+        logger.exception("Failed to delete run %s: %s", run_id, exc)
+    return None
+
+
 def write_pipeline_outputs(run_id: str, outputs: dict, localized_hi: str) -> None:
     """Insert channel outputs for EN channels and Hindi article into pipeline_outputs."""
     client = get_supabase_client()
@@ -657,7 +675,13 @@ def get_pipeline_metrics(run_id: str) -> dict | None:
         return None
 
     try:
-        response = client.table("pipeline_metrics").select("*").eq("run_id", run_id).limit(1).execute()
+        response = (
+            client.table("pipeline_metrics")
+            .select("*")
+            .eq("run_id", run_id)
+            .limit(1)
+            .execute()
+        )
         rows = response.data or []
         return rows[0] if rows else None
     except Exception as exc:

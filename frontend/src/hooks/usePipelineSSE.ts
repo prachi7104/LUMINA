@@ -84,6 +84,12 @@ export function usePipelineSSE(
           return;
         }
 
+        if (normalized === "escalated") {
+          stopStatusPolling();
+          onHumanRequiredRef.current(runId);
+          return;
+        }
+
         if (normalized === "completed") {
           stopStatusPolling();
           if (onCompleteRef.current) {
@@ -92,7 +98,7 @@ export function usePipelineSSE(
           return;
         }
 
-        if (normalized === "failed" || normalized === "escalated" || normalized === "rejected" || normalized === "cancelled") {
+        if (normalized === "failed" || normalized === "rejected" || normalized === "cancelled") {
           stopStatusPolling();
           onErrorRef.current(`Pipeline ${normalized}`);
         }
