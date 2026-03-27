@@ -197,7 +197,7 @@ describe('MyPipelines - B9 API Integration', () => {
     await waitFor(() => {
       // Filter buttons share text with status badges; use getAllByText
       expect(screen.getAllByText('Completed').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByText('Awaiting Review')).toBeInTheDocument();
+      expect(screen.getAllByText('Awaiting Review').length).toBeGreaterThanOrEqual(1);
       expect(screen.getAllByText('Failed').length).toBeGreaterThanOrEqual(1);
       expect(screen.getByText('Escalated')).toBeInTheDocument();
     });

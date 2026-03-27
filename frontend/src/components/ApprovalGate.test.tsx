@@ -26,6 +26,7 @@ const mockApprovePipeline = vi.fn();
 const mockRejectPipeline = vi.fn();
 const mockGetAuditTrail = vi.fn();
 const mockGetPipelineStrategy = vi.fn();
+const mockGetPipelineStatus = vi.fn();
 
 vi.mock('../app/api/client', () => ({
   getOutputs: (...args: unknown[]) => mockGetOutputs(...args),
@@ -35,6 +36,7 @@ vi.mock('../app/api/client', () => ({
   rejectPipeline: (...args: unknown[]) => mockRejectPipeline(...args),
   getAuditTrail: (...args: unknown[]) => mockGetAuditTrail(...args),
   getPipelineStrategy: (...args: unknown[]) => mockGetPipelineStrategy(...args),
+  getPipelineStatus: (...args: unknown[]) => mockGetPipelineStatus(...args),
 }));
 
 describe('ApprovalGate', () => {
@@ -83,6 +85,14 @@ describe('ApprovalGate', () => {
       strategy_recommendation: null,
       pivot_recommended: false,
       pivot_reason: null,
+    });
+    mockGetPipelineStatus.mockResolvedValue({
+      run_id: 'run-123',
+      status: 'awaiting_approval',
+      pipeline_status: 'awaiting_approval',
+      brief_json: {
+        content_category: 'mutual_fund',
+      },
     });
 
     mockGetAuditTrail.mockResolvedValue([
@@ -149,6 +159,7 @@ describe('ApprovalGate', () => {
     render(<ApprovalGate />);
 
     await screen.findByText('Review your content');
+    await screen.findByText('Original content');
 
     fireEvent.click(screen.getByRole('button', { name: /edit content/i }));
 
