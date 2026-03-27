@@ -402,14 +402,14 @@ async def test_escalated_pipeline_emits_human_required_event_not_error(mocker):
     mock_thread.start.return_value = None
 
     mocker.patch("api.main.threading.Thread", return_value=mock_thread)
-    
+
     # Mock create_run to succeed
     mock_create = mocker.patch(
         "api.main.database.create_run",
         return_value={"status": "success", "error": None}
     )
 
-    # Payload that would trigger escalation  
+    # Payload that would trigger escalation
     payload = {"brief": {"topic": "test"}}
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
